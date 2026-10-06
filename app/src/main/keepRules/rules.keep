@@ -1,0 +1,22 @@
+# AGP 9 的 keep 规则目录：AGP 会把 src/main/keepRules 下的所有规则文件合并后交给 R8。
+#
+# 注意：AAR 自带的 proguard.txt 只保护框架自己的类（io.github.libxposed.api.**），
+# 它里面明确写了 "Module rules should refer to README.md"，也就是说
+# **模块自己的入口类必须由这里保活**。缺了这条规则，一旦开启混淆，
+# 入口类会被改名/删除，症状是"APK 装上了，但框架找不到入口、模块毫无反应"。
+
+# libxposed API 依赖的是 annotation 库，本项目没有引入它，忽略其缺失警告。
+-dontwarn io.github.libxposed.annotation.**
+
+# 保活模块入口类。
+#
+# allowoptimization / allowobfuscation 是官方 README 推荐：
+# 允许优化和改名，但必须保留"继承 XposedModule"这一事实与公开无参构造器，
+# 让框架仍能通过 java_init.list 里的名字定位到它。
+-keep,allowoptimization,allowobfuscation public class * extends io.github.libxposed.api.XposedModule {
+    public <init>();
+}
+
+# 入口类被改名后，java_init.list 里写的旧类名就对不上了。
+# 这条规则让 R8 在混淆时同步改写该清单文件的内容。
+-adaptresourcefilecontents META-INF/xposed/java_init.list

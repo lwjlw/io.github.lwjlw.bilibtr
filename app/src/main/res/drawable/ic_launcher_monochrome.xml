@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 单色版（Android 13+ 主题图标）：只保留形状，颜色由系统主题决定 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M8,32 C34,32 46,50 60,54"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7.6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M8,54 L60,54"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7.6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M8,76 C34,76 46,58 60,54"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7.6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M60,54 L78,54"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9.8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M76,45 L92,54 L76,63 Z"
+        android:fillColor="#FFFFFF" />
+</vector>

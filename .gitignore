@@ -1,0 +1,43 @@
+# ---- Android / Gradle ----
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+output.json
+
+# ---- 密钥（绝不入库）----
+*.jks
+*.keystore
+keystore.properties
+
+# ---- 本项目的临时产物 ----
+# 真机日志 / 测速 JSON / 分析中间结果
+recon-logs/
+tools/__pycache__/
+*.pyc
+
+# ---- 开发过程文档（**不进公开仓库**）----
+# dev-docs/ 里是交接文档与逐轮实验记录：含真机日志、设备型号、
+# 节点实测数据、以及"参考了哪个项目"的内部判断。
+# 这些对开发有用，但不适合公开 —— 公开仓库只留 README.md + LICENSE + 源码。
+/dev-docs/
+
+# 历史 APK / 配置快照（二进制与本地状态，不入库）
+/artifacts/
+

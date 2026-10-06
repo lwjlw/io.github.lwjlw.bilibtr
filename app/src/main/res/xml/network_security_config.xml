@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  只对本机回环地址放开明文 HTTP。
+
+  为什么需要：Android 9（API 28）起默认**禁止明文 HTTP**，
+  而界面要和注入侧通信，走的是 `http://127.0.0.1:18889`（回环 TCP 通道）。
+  不放开的话请求会抛 `Cleartext HTTP traffic to 127.0.0.1 not permitted`，
+  被 runCatching 吞掉后表现为**永远显示"未连接"**（踩过一次）。
+
+  注意：B站 自己能连 127.0.0.1 是因为**它的**清单开了明文；
+  明文开关是**按 App 生效**的，所以我们这个 App 必须自己声明。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

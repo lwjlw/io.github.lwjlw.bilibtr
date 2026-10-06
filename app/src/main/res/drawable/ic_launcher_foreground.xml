@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BiliBTR 前景：三条并发光带（蓝/青/紫）汇聚成一条亮青的箭头。
+  象征「多 CDN 并发 → 汇聚成一路更快的流」。原创图形，无第三方素材。
+
+  自适应图标 viewport 108x108，**安全区为中间 72x72（18~90）**；
+  这里让图案略微超出安全区（12~92），因为外围 18dp 只是"可能被裁"，
+  在这个形状下不会被裁到主体，反而更饱满。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ① 上方光带（蓝） -->
+    <path
+        android:pathData="M8,32 C34,32 46,50 60,54"
+        android:strokeColor="#334F9CFF"
+        android:strokeWidth="15"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M8,32 C34,32 46,50 60,54"
+        android:strokeColor="#4F9CFF"
+        android:strokeWidth="7.6"
+        android:strokeLineCap="round" />
+
+    <!-- ② 中间光带（青） -->
+    <path
+        android:pathData="M8,54 L60,54"
+        android:strokeColor="#3337E0C8"
+        android:strokeWidth="15"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M8,54 L60,54"
+        android:strokeColor="#37E0C8"
+        android:strokeWidth="7.6"
+        android:strokeLineCap="round" />
+
+    <!-- ③ 下方光带（紫） -->
+    <path
+        android:pathData="M8,76 C34,76 46,58 60,54"
+        android:strokeColor="#33A276FF"
+        android:strokeWidth="15"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M8,76 C34,76 46,58 60,54"
+        android:strokeColor="#A276FF"
+        android:strokeWidth="7.6"
+        android:strokeLineCap="round" />
+
+    <!-- ④ 汇聚点光晕 -->
+    <path android:pathData="M62,54 m-13,0 a13,13 0 1,0 26,0 a13,13 0 1,0 -26,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="62"
+                android:centerY="54"
+                android:gradientRadius="13">
+                <item android:offset="0" android:color="#CCFFFFFF" />
+                <item android:offset="0.45" android:color="#6E5CFFE1" />
+                <item android:offset="1" android:color="#005CFFE1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- ⑤ 汇聚后的主输出干线 -->
+    <path
+        android:pathData="M60,54 L78,54"
+        android:strokeColor="#5CFFE1"
+        android:strokeWidth="9.8"
+        android:strokeLineCap="round" />
+
+    <!-- ⑥ 箭头 -->
+    <path
+        android:pathData="M76,45 L92,54 L76,63 Z"
+        android:fillColor="#8CFFF0" />
+</vector>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 界面要按 cid 去 B站 公开接口查视频标题（测速面板显示"正在播放什么"） -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BiliBTR">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.BiliBTR"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          设置与测速数据的通道：B站 进程（我们的注入代码）通过它读写设置、推送实时测速数据。
+          必须 exported=true 才能被 B站 进程（不同 uid）访问；不加权限是为了能用
+          `adb shell content call` 直接调试。数据只是几个开关，无敏感信息。
+        -->
+        <provider
+            android:name=".settings.SettingsProvider"
+            android:authorities="com.lw5.bilibtr.settings"
+            android:exported="true"
+            android:enabled="true"
+            android:grantUriPermissions="true" />
+    </application>
+
+</manifest>
