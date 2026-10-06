@@ -14,13 +14,13 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.lw5.bilibtr"
+    namespace = "io.github.lwjlw.bilibtr"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.lw5.bilibtr"
+        applicationId = "io.github.lwjlw.bilibtr"
         minSdk = 31
         targetSdk = 37
         versionCode = 1
@@ -56,7 +56,7 @@ android {
             // 权衡后决定：**不开混淆**（用户 2026-10-06 明确同意）。
             //   - 收益：混淆只能把包从 ~20 MiB 压到 ~2 MiB；
             //   - 风险：① 上面的包级可见性崩溃；
-            //           ② 入口类 `com.lw5.bilibtr.ReconModule` 一旦被改名，
+            //           ② 入口类 `io.github.lwjlw.bilibtr.ReconModule` 一旦被改名，
             //              LSPosed 就找不到入口 —— **模块静默失效且不报错**，
             //              极难排查（名字写死在 META-INF/xposed/java_init.list 里）。
             // 对一个工具模块来说，稳定 > 体积。

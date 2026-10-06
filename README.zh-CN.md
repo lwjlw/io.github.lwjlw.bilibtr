@@ -42,7 +42,7 @@ BiliBTR 将 [Bilibili-thread-ripper](https://github.com/MrTangLuyao/Bilibili-thr
 - **缓冲调节**：**缓冲大小 / 缓冲时长**手动调节
 - **播放页悬浮球**：**3x / 4x 倍速**，无操作自动隐藏
 
-![alt text](Screenshot-com.lw5.bilibtr-1.jpg)
+![alt text](screenshot-1.jpg)
 
 
 ## 环境要求
@@ -123,7 +123,7 @@ App 下发设置、读取测速数据；注入侧上报状态。
 
 ```bash
 git clone <this-repo>
-cd com.lw5.bilibtr
+cd io.github.lwjlw.bilibtr
 ./gradlew :app:assembleRelease
 # 产物：app/build/outputs/apk/release/app-release.apk
 ```

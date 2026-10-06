@@ -3,14 +3,14 @@
 #
 #  ⚠️ 最重要的一条：**入口类名不能改**。
 #  LSPosed 是通过 `META-INF/xposed/java_init.list` 里的**字符串**来加载入口类的
-#  （本模块写的是 `com.lw5.bilibtr.ReconModule`）。R8 一旦把它混淆成 `a.b.c`，
+#  （本模块写的是 `io.github.lwjlw.bilibtr.ReconModule`）。R8 一旦把它混淆成 `a.b.c`，
 #  框架就找不到入口，**模块装上去完全没反应**（而且不报错，极难查）。
 # ============================================================================
 
 # 入口类：名字与公开无参构造器都必须保留
--keep class com.lw5.bilibtr.ReconModule { *; }
--keepnames class com.lw5.bilibtr.ReconModule
--keepclassmembers class com.lw5.bilibtr.ReconModule {
+-keep class io.github.lwjlw.bilibtr.ReconModule { *; }
+-keepnames class io.github.lwjlw.bilibtr.ReconModule
+-keepclassmembers class io.github.lwjlw.bilibtr.ReconModule {
     public <init>();
 }
 

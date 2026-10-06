@@ -35,7 +35,7 @@
         -->
         <provider
             android:name=".settings.SettingsProvider"
-            android:authorities="com.lw5.bilibtr.settings"
+            android:authorities="io.github.lwjlw.bilibtr.settings"
             android:exported="true"
             android:enabled="true"
             android:grantUriPermissions="true" />

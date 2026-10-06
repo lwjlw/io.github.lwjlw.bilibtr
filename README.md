@@ -45,7 +45,7 @@ already has the right to access**.
 - **Buffer tuning** — manual **buffer size / buffer duration**
 - **Floating speed ball** — **3x / 4x playback speed**, auto-hides when idle
 
-![alt text](Screenshot-com.lw5.bilibtr-1.jpg)
+![alt text](screenshot-1.jpg)
 
 ## Requirements
 
@@ -130,7 +130,7 @@ Requires JDK 17+ and the Android SDK (platform 37).
 
 ```bash
 git clone <this-repo>
-cd com.lw5.bilibtr
+cd io.github.lwjlw.bilibtr
 ./gradlew :app:assembleRelease
 # output: app/build/outputs/apk/release/app-release.apk
 ```

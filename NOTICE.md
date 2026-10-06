@@ -45,7 +45,7 @@ PiliPlus 自身声明（原文）：
 | --- | --- |
 | 项目 | BiliBTR |
 | 开发者 | **lwjlw** |
-| 包名 | `com.lw5.bilibtr` |
+| 包名 | `io.github.lwjlw.bilibtr` |
 | 许可 | GPL-3.0（见 [`LICENSE`](LICENSE)） |
 | 实现 | 代码主要由 AI 编程助手编写；需求、设计取舍与真机验收由项目所有者完成 |
 | 详见 | [`README.md`](README.md) / [`README.en.md`](README.en.md) 的「贡献声明 / Contribution Statement」 |
