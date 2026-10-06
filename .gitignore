@@ -2,12 +2,6 @@
 *.iml
 .gradle
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
 .DS_Store
 /build
 /captures
@@ -41,3 +35,6 @@ tools/__pycache__/
 # 历史 APK / 配置快照（二进制与本地状态，不入库）
 /artifacts/
 
+
+# Android Studio 工程配置（本机相关，不跟踪）
+/.idea/
