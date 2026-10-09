@@ -216,8 +216,14 @@ fun SettingsScreen(activity: ComponentActivity) {
                 "缓冲设置",
                 "线路抖动时，「缓冲」比「并发」更能救体感。0 = 不干预，保持 B站 默认。",
             ) {
-                IntSlider("缓冲大小", s.bufferSizeKb, 0, 200, 0,
-                    { v -> update(s.copy(bufferSizeKb = v)) }) {
+                // ⚠️ **单位必须换算**（曾经是个 bug）：
+                // 界面显示 **MB**，但底层字段 `bufferSizeKb` 与配置项 `bufsizekb` 都是 **KB**。
+                // 原来直接把滑块的 MB 数当 KB 存下去 → "200 MB" 实际只有 **200 KB**
+                // （B站 原本是 150 MB），缓冲被压到极小，
+                // 导致**缓冲水位（缓冲时长）永远撑不满**，看起来就是"缓冲时长没生效"。
+                // 现在在这里做 MB ↔ KB 换算。
+                IntSlider("缓冲大小", s.bufferSizeKb / 1024, 0, 200, 0,
+                    { v -> update(s.copy(bufferSizeKb = v * 1024)) }) {
                     if (it == 0) "不干预" else "$it MB"
                 }
                 Text(

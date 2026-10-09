@@ -186,22 +186,56 @@ public final class ConfigServer {
         sb.append(",\"stDone\":").append(CdnRacer.speedTestDone());
         sb.append(",\"stTotal\":").append(CdnRacer.speedTestTotal());
         sb.append(",\"hosts\":[");
-        boolean first = true;
+        // ① 先收集（同一节点只列一次）
+        java.util.List<String[]> rows = new java.util.ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (String u : CdnRacer.candidates()) {
             String h = io.github.lwjlw.bilibtr.recon.Recon.hostOf(u);
             if (h == null) continue;
             if (!seen.add(h)) continue;          // 同一节点只列一次
-            if (!first) sb.append(',');
-            first = false;
             String st = CdnRacer.speedTestResult(h);
-            sb.append("{\"h\":\"").append(esc(h)).append('"');
-            sb.append(",\"st\":\"").append(st == null ? "" : st).append('"');
-            sb.append(",\"active\":").append(h.equals(CdnRacer.activeHost()));
+            rows.add(new String[]{
+                    h,
+                    st == null ? "" : st,
+                    h.equals(CdnRacer.activeHost()) ? "1" : "0"});
+        }
+        // ② **按速度从高到低排序**（用户要求）：
+        //    有实测速度的排前面（快 → 慢）；「不可用(0:0)」其次；「未测速(空)」最后。
+        //    同档内按主机名排，保证顺序稳定、不会每次刷新都跳动。
+        rows.sort((a, b) -> {
+            int ra = rankOf(a[1]), rb = rankOf(b[1]);
+            if (ra != rb) return ra - rb;
+            if (ra == 0) return Long.compare(speedOf(b[1]), speedOf(a[1]));
+            return a[0].compareTo(b[0]);
+        });
+        // ③ 输出
+        for (int i = 0; i < rows.size(); i++) {
+            String[] r = rows.get(i);
+            if (i > 0) sb.append(',');
+            sb.append("{\"h\":\"").append(esc(r[0])).append('"');
+            sb.append(",\"st\":\"").append(r[1]).append('"');
+            sb.append(",\"active\":").append("1".equals(r[2]));
             sb.append('}');
         }
         sb.append("]}");
         return sb.toString();
+    }
+
+    /** 测速结果的排序档位：0 = 有速度，1 = 不可用，2 = 未测速。 */
+    private static int rankOf(String st) {
+        if (st == null || st.isEmpty()) return 2;
+        if (st.startsWith("1:")) return 0;
+        return 1;
+    }
+
+    /** 从 "1:&lt;bps&gt;" 里取速度；取不到返回 -1。 */
+    private static long speedOf(String st) {
+        try {
+            int i = st.indexOf(':');
+            return i < 0 ? -1L : Long.parseLong(st.substring(i + 1));
+        } catch (Throwable t) {
+            return -1L;
+        }
     }
 
     /** 去掉签名 query：只留 `host/path`（签名不该外发，界面也不需要）。 */
@@ -284,17 +318,22 @@ public final class ConfigServer {
                 resp = statsJson;
             } else if (path.startsWith("/info")) {
                 resp = infoJson();
-            } else if (path.startsWith("/speed")) {
+            } else if (path.startsWith("/speedtest")) {
+                // ⚠️ **必须排在 /speed 前面**。
+                // 曾经把 `/speed` 写在前面且用 startsWith 匹配 →
+                // `/speedtest` 也被它吃掉了，结果界面上点"测速"**一个节点都没有数值**
+                // （请求返回 ok，但测速根本没执行；stDone/stTotal 一直是 0）。
+                CdnRacer.speedTestAll();
+                resp = "ok\n";
+            } else if (path.equals("/speed")) {
                 // 调试/联动用：/speed?v=3 强制 3x，v=0 表示跟随 B站
+                // 注意这里是 **equals**，不要再让前缀匹配误伤别的路径。
                 float v = 0f;
                 try {
                     v = Float.parseFloat(queryParam(query, "v"));
                 } catch (Throwable ignored) {
                 }
                 PlaySpeed.setOverride(v);
-                resp = "ok\n";
-            } else if (path.startsWith("/speedtest")) {
-                CdnRacer.speedTestAll();
                 resp = "ok\n";
             } else if (path.startsWith("/pin")) {
                 CdnRacer.pin(queryParam(query, "h"));

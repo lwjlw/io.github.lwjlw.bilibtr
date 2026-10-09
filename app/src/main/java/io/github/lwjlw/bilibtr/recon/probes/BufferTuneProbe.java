@@ -221,7 +221,12 @@ public final class BufferTuneProbe {
         long bufSize = ProxyConfig.bufferSizeBytes();
         long bufTime = ProxyConfig.bufferTimeMs();
         if (low.contains("max-buffer-size") && bufSize > 0) return String.valueOf(bufSize);
-        if (low.contains("high-water-mark") && bufTime > 0) return String.valueOf(bufTime);
+        if (low.contains("high-water-mark") && bufTime > 0) {
+            // `last-high-water-mark-ms` 是**最低**水位，按一半处理 ——
+            // 必须和 {@link #applyWaterMarks} 里的设置保持一致，
+            // 否则会出现"设置时写 30000、覆盖时又变回 60000"的自相矛盾。
+            return String.valueOf(low.contains("last-") ? bufTime / 2 : bufTime);
+        }
         if (low.contains("min-frames") && bufTime > 0) {
             // min-frames 是帧数不是毫秒：按 30fps 折算，给个保守值
             return String.valueOf(Math.max(1, bufTime / 33));

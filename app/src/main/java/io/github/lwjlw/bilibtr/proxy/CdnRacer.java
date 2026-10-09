@@ -166,8 +166,19 @@ public final class CdnRacer {
     private static final java.util.concurrent.atomic.AtomicInteger ST_TOTAL =
             new java.util.concurrent.atomic.AtomicInteger();
 
+    /**
+     * 防止**两次测速并发**。
+     *
+     * 踩过：界面点一次、外部又触发一次 → 两个任务各跑一轮，
+     * 但计数器共用一份 → 出现 `stDone=23 / stTotal=13` 这种荒唐数字。
+     * 现在重复触发直接忽略。
+     */
+    private static final java.util.concurrent.atomic.AtomicBoolean ST_RUNNING =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     public static int speedTestDone() {
-        return ST_DONE.get();
+        // 夹一下：进度永远不该超过总数（并发/看门狗都可能多加）
+        return Math.min(ST_DONE.get(), Math.max(ST_TOTAL.get(), 0));
     }
 
     public static int speedTestTotal() {
@@ -184,6 +195,11 @@ public final class CdnRacer {
      * 现在：按 host 去重 → **固定 4 个一批**并发 → 每完成一个就更新进度。
      */
     public static void speedTestAll() {
+        // 已有测速在跑 → 直接忽略，避免两轮任务共用一套计数器
+        if (!ST_RUNNING.compareAndSet(false, true)) {
+            Recon.note("CDN:TEST", "已有测速在进行，忽略本次重复触发");
+            return;
+        }
         java.util.List<String> base = new java.util.ArrayList<>(lastCands);
         java.util.Map<String, String> hdrs = lastHeaders;
         if (base.isEmpty()) {
@@ -198,6 +214,7 @@ public final class CdnRacer {
         final java.util.Map<String, String> headers = hdrs;
         if (cands.isEmpty()) {
             Recon.note("CDN:TEST", "没有候选节点可测（先播放一段视频）");
+            ST_RUNNING.set(false);   // 提前返回也要放开闸门
             return;
         }
 
@@ -207,7 +224,10 @@ public final class CdnRacer {
             String h = Recon.hostOf(u);
             if (h != null && !byHost.containsKey(h)) byHost.put(h, u);
         }
-        if (byHost.isEmpty()) return;
+        if (byHost.isEmpty()) {
+            ST_RUNNING.set(false);   // 提前返回也要放开闸门
+            return;
+        }
 
         SPEEDTEST.clear();
         ST_TOTAL.set(byHost.size());
@@ -260,6 +280,9 @@ public final class CdnRacer {
                     Recon.note("CDN:TEST", "看门狗：有 " + stuck + " 个节点 20 秒没返回，已标记超时");
                 }
             } catch (InterruptedException ignored) {
+            } finally {
+                // 到这里这一轮肯定结束了 → 放开闸门，允许下一次测速
+                ST_RUNNING.set(false);
             }
         }, "btr-test-wd");
         wd.setDaemon(true);
@@ -365,6 +388,15 @@ public final class CdnRacer {
                 if (cid == null) cid = "";
                 if (!cid.equals(lastCid) || lastCands.isEmpty()) {
                     // 换了视频：重新开始累积
+                    //
+                    // ⚠️ **必须同时清空"本片实际用量"**（用户实测反馈：
+                    // "换一个视频之后，本片实际用量的部分还会继承上一个视频的统计数据"）。
+                    // HOST_BYTES 原来是进程级累加、从不重置，所以面板上永远显示的是
+                    // 从进程启动到现在的总账，而不是"本片"。
+                    // 首次进入（lastCid 为空）不用清，清了也无害。
+                    if (!cid.isEmpty() && !cid.equals(lastCid)) {
+                        resetHostStats();
+                    }
                     lastCid = cid;
                     lastCands = new java.util.ArrayList<>(cands);
                 } else {
@@ -497,6 +529,24 @@ public final class CdnRacer {
         }
         Collections.sort(out, (a, b) -> Long.compare(b.bytes, a.bytes));
         return out;
+    }
+
+    /**
+     * 清空「本片实际用量」。
+     *
+     * 换视频（cid 变了）时调用 —— 否则面板上显示的是**从进程启动到现在的总账**，
+     * 换了片还在继承上一部的数据（用户实测反馈）。
+     *
+     * 注意：**只清用量，不清评分**（{@code EMA_REAL}）。
+     * 评分衡量的是"这个节点本身快不快"，跨视频保留才有意义；
+     * 而用量是"这一片从这个节点下了多少"，必须按片重置。
+     */
+    private static void resetHostStats() {
+        int n = HOST_BYTES.size();
+        HOST_BYTES.clear();
+        if (n > 0) {
+            Recon.note("CDN:STATS", "换视频 → 已清空上一片的节点用量统计（" + n + " 个节点）");
+        }
     }
 
     /** 真实流量反哺：每完成一次上游传输就记一笔。**评分只认这个。** */

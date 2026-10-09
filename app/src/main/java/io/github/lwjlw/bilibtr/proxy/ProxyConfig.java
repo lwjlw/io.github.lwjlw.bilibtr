@@ -103,6 +103,17 @@ public final class ProxyConfig {
         reloadIfStale();
         int kb = bufferSizeKb;
         if (kb <= 0) return 0L;
+        // ⚠️ **防线**：小于 4 MB 的"缓冲上限"对视频播放器毫无意义，
+        // 只会把 B站 默认的 150 MB 压垮。
+        // 起因：界面上单位写的是 MB、底层却是 KB，用户拉满到"200 MB"，
+        // 实际写下去是 200 KB → 播放一直卡，且缓冲水位永远撑不满
+        // （表现为"缓冲时长没生效"）。单位已在界面侧修正，这里再兜一层。
+        if (kb < 4096) {
+            if (Recon.first("BUF:IGNORE", "v")) {
+                Recon.note("BUF:IGNORE", "缓冲大小配置为 " + kb + "KB，过小，按「不干预」处理");
+            }
+            return 0L;
+        }
         if (kb > 512 * 1024) kb = 512 * 1024;
         return kb * 1024L;
     }
