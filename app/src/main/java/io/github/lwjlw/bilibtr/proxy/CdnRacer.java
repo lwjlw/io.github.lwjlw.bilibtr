@@ -175,6 +175,10 @@ public final class CdnRacer {
      */
     private static final java.util.concurrent.atomic.AtomicBoolean ST_RUNNING =
             new java.util.concurrent.atomic.AtomicBoolean(false);
+    /** 上一轮测速的开始时刻（闸门自愈用）。 */
+    private static volatile long ST_STARTED_AT = 0L;
+    /** 一轮测速最多算多久；超过就认为闸门漏放，强行允许下一轮。 */
+    private static final long ST_MAX_MS = 25_000L;
 
     public static int speedTestDone() {
         // 夹一下：进度永远不该超过总数（并发/看门狗都可能多加）
@@ -197,9 +201,19 @@ public final class CdnRacer {
     public static void speedTestAll() {
         // 已有测速在跑 → 直接忽略，避免两轮任务共用一套计数器
         if (!ST_RUNNING.compareAndSet(false, true)) {
-            Recon.note("CDN:TEST", "已有测速在进行，忽略本次重复触发");
-            return;
+            // ⚠️ **自愈**：闸门是靠"跑完/看门狗"放开的，万一哪条路径漏了，
+            // 就会永久卡死、之后所有测速都被忽略。
+            // 所以再加一条时间兜底：距上次开始超过 ST_MAX_MS 就强行放行。
+            long since = System.currentTimeMillis() - ST_STARTED_AT;
+            if (since < ST_MAX_MS) {
+                Recon.note("CDN:TEST", "已有测速在进行（已 " + (since / 1000)
+                        + "s），忽略本次重复触发");
+                return;
+            }
+            Recon.note("CDN:TEST", "上一次测速已过去 " + (since / 1000) + "s，强行放行本次");
+            ST_RUNNING.set(true);
         }
+        ST_STARTED_AT = System.currentTimeMillis();
         java.util.List<String> base = new java.util.ArrayList<>(lastCands);
         java.util.Map<String, String> hdrs = lastHeaders;
         if (base.isEmpty()) {
@@ -258,16 +272,25 @@ public final class CdnRacer {
                             + " 耗时 " + (System.currentTimeMillis() - t0) + "ms");
                 } finally {
                     ST_DONE.incrementAndGet();
+                    // ★ **全部探完就立刻放开闸门**，不等看门狗。
+                    // 踩过：原来只有看门狗（20 秒）才放开，而测速本身只要 4 秒，
+                    // 于是这 20 秒内用户再点测速**全被忽略**，界面停在上一次的状态，
+                    // 看起来就是"卡在 5/13 一直排队中"。
+                    if (ST_DONE.get() >= ST_TOTAL.get()) {
+                        ST_RUNNING.set(false);
+                    }
                 }
             });
         }
         pool.shutdown();
 
-        // ★ 看门狗：20 秒还没测完的，一律标记"超时"并收尾 —— 绝不让界面永远卡在 x/13
+        // ★ 看门狗：12 秒还没测完的，一律标记"超时"并收尾 —— 绝不让界面永远卡在 x/13
+        // （原来 20 秒太长：探针正常只要 4 秒，用户会以为卡死。探测本身是
+        //  3 秒连接 + 5 秒读、且不重试，12 秒足够覆盖最慢的活节点。）
         final java.util.Map<String, String> target = byHost;
         Thread wd = new Thread(() -> {
             try {
-                Thread.sleep(20_000L);
+                Thread.sleep(12_000L);
                 int stuck = 0;
                 for (String h : target.keySet()) {
                     if (!SPEEDTEST.containsKey(h)) {
@@ -277,7 +300,7 @@ public final class CdnRacer {
                     }
                 }
                 if (stuck > 0) {
-                    Recon.note("CDN:TEST", "看门狗：有 " + stuck + " 个节点 20 秒没返回，已标记超时");
+                    Recon.note("CDN:TEST", "看门狗：有 " + stuck + " 个节点 12 秒没返回，已标记超时");
                 }
             } catch (InterruptedException ignored) {
             } finally {
