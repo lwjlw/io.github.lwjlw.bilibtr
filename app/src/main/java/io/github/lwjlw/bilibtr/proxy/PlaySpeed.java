@@ -164,6 +164,19 @@ public final class PlaySpeed {
         return override;
     }
 
+    /**
+     * **当前实际生效的倍速**（≥1）：悬浮球覆盖值 > 配置里的测试值 > 1。
+     *
+     * 用途（2026-10-13 加）：倍速 3x 时播放器**消耗**的码率也是 3 倍，
+     * 所以"够不够快"的目标（并发控制器的 target）必须跟着乘上去 ——
+     * 实测漏了这一步：3x 下实际只跑到 1.97x，因为控制器还按 1x 的目标判断"够了"。
+     */
+    public static float activeSpeed() {
+        float v = override;
+        if (v <= 0f) v = ProxyConfig.playbackSpeed();
+        return v > 1f ? v : 1f;
+    }
+
     /** 悬浮球点了 3x/4x/跟随 时调用。 */
     public static void setOverride(float v) {
         override = Math.max(0f, v);

@@ -171,8 +171,8 @@ public final class BufferTuneProbe {
             // 诊断汇总（2026-10-13）：一次把"我们要设什么 / B站 自己设过什么"打全。
             // 上限的**来源**必须说清楚（曾经这里把"界面缓冲大小"说成"时长×码率"，会误导排查）。
             Recon.note("OPT:CHK", "缓冲配置：起播门槛=" + first + "ms、卡顿恢复=" + next
-                    + "ms、读取低水位=" + last + "ms、上限=" + bufBytes + "B"
-                    + "（来源：" + ProxyConfig.bufferSizeSource() + "）"
+                    + "ms、读取低水位=" + last + "ms（" + ProxyConfig.lastWaterSource() + "）"
+                    + "、上限=" + bufBytes + "B（" + ProxyConfig.bufferSizeSource() + "）"
                     + "；B站 自己设过的缓冲选项=" + appRawSummary());
         }
         int category = args.size() >= 1 && args.get(0) instanceof Number
@@ -306,8 +306,8 @@ public final class BufferTuneProbe {
      * | --- | --- | --- |
      * | `first-high-water-mark-ms` | 攒够多少才**开始播** | 3s（起播快） |
      * | `next-high-water-mark-ms` | 卡顿后攒够多少才**继续播** | 15s（一次卡顿别罚一分钟） |
-     * | `last-high-water-mark-ms` | 缓冲掉到多少就**继续读** | 3s（一消耗就补） |
-     * | `max-buffer-size` | **能囤多少**（容量） | 用户设的 MB，或"秒数 × 码率" |
+     * | `last-high-water-mark-ms` | 缓存掉到多少就**继续读** | **「缓冲时长」的 3/4**（60s → 45s） |
+     * | `max-buffer-size` | **能囤多少**（容量） | `max(秒数×码率, 储存大小)`，再受 180 秒上限约束 |
      *
      * ⚠️ 以前把用户的"缓冲时长"（比如 60 秒）同时塞给 `first` 和 `next`：
      * 结果是"必须先攒 60 秒才开播""卡一次要再等 60 秒"，

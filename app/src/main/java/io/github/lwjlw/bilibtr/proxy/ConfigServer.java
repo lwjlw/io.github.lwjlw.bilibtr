@@ -131,6 +131,8 @@ public final class ConfigServer {
                         String.valueOf(ProxyConfig.nextWaterMs()))).append('\n');
                 sb.append("lastms=").append(LIVE.getOrDefault("lastms",
                         String.valueOf(ProxyConfig.lastWaterMs()))).append('\n');
+                sb.append("maxbufs=").append(LIVE.getOrDefault("maxbufs",
+                        String.valueOf(ProxyConfig.maxBufferSeconds()))).append('\n');
                 sb.append("ball=").append(LIVE.getOrDefault("ball", "true")).append('\n');
                 // 自动测速选节点 / 换节点提示：**不在 LIVE 里就沿用当前值**
                 // （同 recon 的道理：手工在 btr.conf 里改过的不能被下一次界面推送抹掉）

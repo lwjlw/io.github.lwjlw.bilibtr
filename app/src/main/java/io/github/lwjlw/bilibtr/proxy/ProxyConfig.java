@@ -44,13 +44,17 @@ public final class ProxyConfig {
      */
     public static final int DEFAULT_NEXT_WATER_MS = 15_000;
     /**
-     * **读取恢复的低水位**（`last-high-water-mark-ms`）默认值。
+     * **读取恢复的低水位**（`last-high-water-mark-ms`）—— **手工覆盖值**，0 = 自动。
      *
-     * ffplay 默认 5000ms。**必须小**：它决定"缓冲掉到多少才继续读"，
-     * 设成 30 秒就等于"播掉 30 秒之前完全不下载" —— 用户看到的
-     * "一点点播完也不继续缓存，到 60s 后又卡"就是这么来的。
+     * 自动规则（2026-10-13 用户定）：**= 设置的「缓冲时长」的 3/4**
+     * （设成 60 秒 → 缓存掉到 **45 秒**就开始继续补，维持在这附近）。
+     * 没设「缓冲时长」时退回 4 秒（灵敏的小水位）。
      */
-    public static final int DEFAULT_LAST_WATER_MS = 3_000;
+    public static final int DEFAULT_LAST_WATER_MS = 0;
+    /** 「缓冲时长」没设时，自动水位的兜底值。 */
+    public static final int FALLBACK_LAST_WATER_MS = 4_000;
+    /** 缓冲总时长上限（秒）："取较大者"也不能无限囤，默认 {@value #DEFAULT_MAX_BUFFER_S} 秒。 */
+    public static final int DEFAULT_MAX_BUFFER_S = 180;
 
     /**
      * 默认切分阈值：小于这个长度的 Range 不切。
@@ -85,6 +89,8 @@ public final class ProxyConfig {
      * 小 = 一消耗就补，不会"播着播着不缓存了"。默认 {@value #DEFAULT_LAST_WATER_MS}ms。
      */
     private static volatile int lastWaterMs = DEFAULT_LAST_WATER_MS;
+    /** 缓冲总时长上限（秒）：`max-buffer-size` 换算出的时长不超过它。 */
+    private static volatile int maxBufferS = DEFAULT_MAX_BUFFER_S;
     /** 播放页悬浮球（3x/4x 倍速）总开关。 */
     private static volatile boolean ballEnabled = true;
     /**
@@ -167,13 +173,14 @@ public final class ProxyConfig {
             // 只会把 B站 默认的 150 MB 压垮（界面单位 MB / 底层 KB 那次坑）。
             Recon.note("BUF:IGNORE", "缓冲大小配置为 " + bufferSizeKb + "KB，过小，按「不参与比较」处理");
         }
-        long bySeconds = 0;
-        if (bufferTimeMs > 0) {
-            double bps = CdnRacer.targetBps(CdnRacer.lastUrl());   // 当前流目标吞吐；拿不到就是兜底 1.5MB/s
-            bySeconds = (long) (bps * (bufferTimeMs / 1000.0));
-        }
+        double bps = CdnRacer.targetBps(CdnRacer.lastUrl());   // 当前流目标吞吐；拿不到就是兜底 1.5MB/s
+        long bySeconds = bufferTimeMs > 0 ? (long) (bps * (bufferTimeMs / 1000.0)) : 0L;
         long eff = Math.max(bySize, bySeconds);
         if (eff <= 0) return 0L;
+        // 2026-10-13 用户要求：再加一道**总时长上限**（默认 180 秒）——
+        // "取较大者"不能让低码率视频把 200MB 全用来囤十几分钟的数据。
+        long byMaxSeconds = (long) (bps * maxBufferS);
+        if (eff > byMaxSeconds) eff = byMaxSeconds;
         if (eff < 32L * 1024 * 1024) eff = 32L * 1024 * 1024;          // 下限 32MB
         if (eff > 512L * 1024 * 1024) eff = 512L * 1024 * 1024;        // 上限 512MB
         return eff;
@@ -195,14 +202,22 @@ public final class ProxyConfig {
     public static String bufferSizeSource() {
         reloadIfStale();
         long bySize = bufferSizeKb >= 4096 ? Math.min(bufferSizeKb, 512 * 1024) * 1024L : 0L;
-        long bySeconds = 0;
-        if (bufferTimeMs > 0) {
-            double bps = CdnRacer.targetBps(CdnRacer.lastUrl());
-            bySeconds = (long) (bps * (bufferTimeMs / 1000.0));
-        }
+        double bps = CdnRacer.targetBps(CdnRacer.lastUrl());
+        long bySeconds = bufferTimeMs > 0 ? (long) (bps * (bufferTimeMs / 1000.0)) : 0L;
+        long byMax = (long) (bps * maxBufferS);
         if (bySize <= 0 && bySeconds <= 0) return "未设置（保持 B站 默认 150MB）";
         return "max(时长换算 " + bySeconds + "B, 缓冲大小 " + bySize + "B)"
-                + (bySeconds >= bySize ? " → 时长换算胜出" : " → 缓冲大小胜出");
+                + (bySeconds >= bySize ? " → 时长换算胜出" : " → 缓冲大小胜出")
+                + "，再受 " + maxBufferS + " 秒上限约束（" + byMax + "B）";
+    }
+
+    /** 缓冲总时长上限（秒）。 */
+    public static long maxBufferSeconds() {
+        reloadIfStale();
+        int v = maxBufferS;
+        if (v < 10) v = 10;
+        if (v > 600) v = 600;
+        return v;
     }
 
     /** 起播门槛（毫秒）。 */
@@ -223,13 +238,36 @@ public final class ProxyConfig {
         return v;
     }
 
-    /** 读取恢复的低水位（毫秒）。 */
+    /**
+     * 读取恢复的低水位（毫秒）。
+     *
+     * 规则（用户 2026-10-13 定）：**「缓冲时长」的 3/4** —— 设 60 秒就是"掉到 45 秒开始补"。
+     * `lastms` 写了显式值则用它（手工覆盖优先）；「缓冲时长」没设时退回 4 秒。
+     */
     public static long lastWaterMs() {
         reloadIfStale();
-        int v = lastWaterMs;
-        if (v < 200) v = 200;
-        if (v > 60_000) v = 60_000;
-        return v;
+        if (lastWaterMs > 0) {
+            int v = lastWaterMs;
+            if (v < 200) v = 200;
+            if (v > 180_000) v = 180_000;
+            return v;
+        }
+        if (bufferTimeMs > 0) {
+            long v = (long) (bufferTimeMs * 0.75);
+            if (v < 1_000) v = 1_000;
+            long maxS = maxBufferSeconds() * 1000L;
+            if (v > maxS) v = maxS;
+            return v;
+        }
+        return FALLBACK_LAST_WATER_MS;
+    }
+
+    /** 低水位是怎么来的（日志用）。 */
+    public static String lastWaterSource() {
+        reloadIfStale();
+        if (lastWaterMs > 0) return "手工 lastms=" + lastWaterMs + "ms";
+        if (bufferTimeMs > 0) return "自动 =「缓冲时长」" + bufferTimeMs + "ms × 3/4";
+        return "自动兜底（未设「缓冲时长」）";
     }
 
     /** 阶段 A 侦察探针是否启用（默认否）。 */
@@ -294,6 +332,7 @@ public final class ProxyConfig {
             int fwm = DEFAULT_FIRST_WATER_MS;
             int nwm = DEFAULT_NEXT_WATER_MS;
             int lwm = DEFAULT_LAST_WATER_MS;
+            int mbs = DEFAULT_MAX_BUFFER_S;
             BufferedReader r = f.isFile()
                     ? new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"))
                     : null;
@@ -359,6 +398,11 @@ public final class ProxyConfig {
                             lwm = Integer.parseInt(v);
                         } catch (Throwable ignored) {
                         }
+                    } else if ("maxbufs".equals(k)) {
+                        try {
+                            mbs = Integer.parseInt(v);
+                        } catch (Throwable ignored) {
+                        }
                     } else if ("buftimems".equals(k)) {
                         try {
                             btm = Integer.parseInt(v);
@@ -385,6 +429,7 @@ public final class ProxyConfig {
             firstWaterMs = fwm;
             nextWaterMs = nwm;
             lastWaterMs = lwm;
+            maxBufferS = mbs;
 
             // ② **界面设置优先**：用户改界面比改文件更常用，所以 provider 覆盖文件值。
             //    拿不到 provider（模块 App 没装/没启动）就保持文件值，绝不因此坏掉播放。
@@ -422,6 +467,7 @@ public final class ProxyConfig {
         if ((v = ConfigServer.live("firstms")) != null) firstWaterMs = parseInt(v, firstWaterMs);
         if ((v = ConfigServer.live("nextms")) != null) nextWaterMs = parseInt(v, nextWaterMs);
         if ((v = ConfigServer.live("lastms")) != null) lastWaterMs = parseInt(v, lastWaterMs);
+        if ((v = ConfigServer.live("maxbufs")) != null) maxBufferS = parseInt(v, maxBufferS);
         if ((v = ConfigServer.live("ball")) != null) ballEnabled = "true".equalsIgnoreCase(v) || "1".equals(v);
         if ((v = ConfigServer.live("autopick")) != null) autoPick = "true".equalsIgnoreCase(v) || "1".equals(v);
         if ((v = ConfigServer.live("toast")) != null) toast = "true".equalsIgnoreCase(v) || "1".equals(v);

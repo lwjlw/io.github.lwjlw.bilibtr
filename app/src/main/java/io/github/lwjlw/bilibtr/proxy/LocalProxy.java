@@ -242,8 +242,11 @@ public final class LocalProxy {
                     long len = cr[1] - cr[0] + 1;
                     // ★ 并发数自适应：并发控制器盯**实际吞吐**做闭环（加/减/饱和判定），
                     //   低码率会自动降到 1 条（省掉多余的握手与慢启动）。详见 ConnSpeed。
+                    // ⚠️ 目标要**乘当前倍速**（2026-10-13）：悬浮球开 3x 时播放器消耗也是 3 倍，
+                    //    不乘的话控制器认为"2.58MB/s 就够"，实测 3x 只能跑到 1.97x。
                     int concMax = ProxyConfig.concurrency();
-                    int conc = ConnSpeed.desired(CdnRacer.targetBps(upUrl), concMax);
+                    double tgt = CdnRacer.targetBps(upUrl) * PlaySpeed.activeSpeed();
+                    int conc = ConnSpeed.desired(tgt, concMax);
                     if (conc > 1 && len >= ProxyConfig.minSplit() && !RangeFetcher.degraded()) {
                         long t0s = SystemClock.elapsedRealtime();
                         int rc = RangeFetcher.streamRange(upUrl, headers, cr[0], cr[1], conc, 0L, out);
