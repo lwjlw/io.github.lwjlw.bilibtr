@@ -147,40 +147,39 @@ public final class ProxyConfig {
     /**
      * **缓冲上限**（`max-buffer-size`，字节）；0 = 不干预。
      *
-     * 两个来源（2026-10-13 改）：
-     * 1. 用户在界面上直接设了「缓冲大小」(MB) → 用它（≥4MB 才认，见下面的防线）；
-     * 2. 只设了「缓冲时长」(秒) → **用当前流的码率换算**：
-     *    `字节 = 秒 × 目标吞吐`（目标吞吐 = `bw÷8×1.2`，即"播放需要多快"）。
-     *    这样用户的"我要保持 60 秒缓冲"才有真实含义 —— 以前它被直接塞进了
-     *    `first/next-high-water-mark-ms`，而那三个是**水位/门槛**，不是容量。
+     * 2026-10-13 用户要求：**"秒数换算"和"储存大小"取较大的那个，而不是定死一个数据量**。
+     * 所以现在是：
+     * ```
+     * 按秒数换算 = 「缓冲时长」秒 × 当前视频码率（bw÷8×1.2）   ← 随视频变化
+     * 按储存大小 = 界面「缓冲大小」MB
+     * 上限 = max(两者)        （都没设 → 不干预）
+     * ```
+     * 例：4K 视频（~2.6MB/s）设 60 秒 → 156MB；若储存大小写的是 200MB → 取 200MB；
+     * 若写的是 60MB → 取 156MB（保证"60 秒"这个诉求不会被小容量压掉）。
      */
     public static long bufferSizeBytes() {
         reloadIfStale();
-        int kb = bufferSizeKb;
-        if (kb >= 4096) {
-            if (kb > 512 * 1024) kb = 512 * 1024;
-            return kb * 1024L;
+        long bySize = 0;
+        if (bufferSizeKb >= 4096) {
+            bySize = Math.min(bufferSizeKb, 512 * 1024) * 1024L;
+        } else if (bufferSizeKb > 0 && Recon.first("BUF:IGNORE", "v")) {
+            // ⚠️ **防线**：小于 4 MB 的"缓冲上限"对视频播放器毫无意义，
+            // 只会把 B站 默认的 150 MB 压垮（界面单位 MB / 底层 KB 那次坑）。
+            Recon.note("BUF:IGNORE", "缓冲大小配置为 " + bufferSizeKb + "KB，过小，按「不参与比较」处理");
         }
-        // ⚠️ **防线**：小于 4 MB 的"缓冲上限"对视频播放器毫无意义，
-        // 只会把 B站 默认的 150 MB 压垮。
-        // 起因：界面上单位写的是 MB、底层却是 KB，用户拉满到"200 MB"，
-        // 实际写下去是 200 KB → 播放一直卡，且缓冲水位永远撑不满
-        // （表现为"缓冲时长没生效"）。单位已在界面侧修正，这里再兜一层。
-        if (kb > 0 && Recon.first("BUF:IGNORE", "v")) {
-            Recon.note("BUF:IGNORE", "缓冲大小配置为 " + kb + "KB，过小，按「不干预」处理");
+        long bySeconds = 0;
+        if (bufferTimeMs > 0) {
+            double bps = CdnRacer.targetBps(CdnRacer.lastUrl());   // 当前流目标吞吐；拿不到就是兜底 1.5MB/s
+            bySeconds = (long) (bps * (bufferTimeMs / 1000.0));
         }
-        int ms = bufferTimeMs;
-        if (ms > 0) {
-            double bps = CdnRacer.targetBps(CdnRacer.lastUrl());   // 当前流的目标吞吐；拿不到就是兜底 1.5MB/s
-            long bytes = (long) (bps * (ms / 1000.0));
-            if (bytes < 32L * 1024 * 1024) bytes = 32L * 1024 * 1024;      // 下限 32MB
-            if (bytes > 512L * 1024 * 1024) bytes = 512L * 1024 * 1024;    // 上限 512MB
-            return bytes;
-        }
-        return 0L;
+        long eff = Math.max(bySize, bySeconds);
+        if (eff <= 0) return 0L;
+        if (eff < 32L * 1024 * 1024) eff = 32L * 1024 * 1024;          // 下限 32MB
+        if (eff > 512L * 1024 * 1024) eff = 512L * 1024 * 1024;        // 上限 512MB
+        return eff;
     }
 
-    /** 缓冲时长（毫秒）；0 = 不干预。现在只用来换算"缓冲上限"。 */
+    /** 缓冲时长（毫秒）；0 = 不干预。只用来和「缓冲大小」比大小。 */
     public static long bufferTimeMs() {
         reloadIfStale();
         int ms = bufferTimeMs;
@@ -189,12 +188,21 @@ public final class ProxyConfig {
         return ms;
     }
 
-    /** 缓冲上限的**来源**（只用于日志/诊断，免得日志把"谁定的"说错）。 */
+    /**
+     * 缓冲上限的**来源/算式**（只用于日志与界面提示）。
+     * 必须把两个候选值都写出来，否则又会出现"日志把谁定的说错"那种事。
+     */
     public static String bufferSizeSource() {
         reloadIfStale();
-        if (bufferSizeKb >= 4096) return "界面「缓冲大小」=" + bufferSizeKb + "KB";
-        if (bufferTimeMs > 0) return "「缓冲时长」" + bufferTimeMs + "ms × 当前码率";
-        return "未设置";
+        long bySize = bufferSizeKb >= 4096 ? Math.min(bufferSizeKb, 512 * 1024) * 1024L : 0L;
+        long bySeconds = 0;
+        if (bufferTimeMs > 0) {
+            double bps = CdnRacer.targetBps(CdnRacer.lastUrl());
+            bySeconds = (long) (bps * (bufferTimeMs / 1000.0));
+        }
+        if (bySize <= 0 && bySeconds <= 0) return "未设置（保持 B站 默认 150MB）";
+        return "max(时长换算 " + bySeconds + "B, 缓冲大小 " + bySize + "B)"
+                + (bySeconds >= bySize ? " → 时长换算胜出" : " → 缓冲大小胜出");
     }
 
     /** 起播门槛（毫秒）。 */

@@ -68,6 +68,11 @@ public final class PlaySpeed {
         return r == null ? null : r.get();
     }
 
+    /** 当前抓到的真播放器实例（可能为 null）。给缓冲重算等诊断/调参用。 */
+    public static Object player() {
+        return playerRef();
+    }
+
     /** 真播放器的当前播放位置（毫秒）；读不到返回 -1。 */
     public static long currentPositionMs() {
         Object p = playerRef();
@@ -89,6 +94,43 @@ public final class PlaySpeed {
         Object p = playerRef();
         if (p == null) return -1;
         for (String n : new String[]{"getBufferPercentage", "_getBufferPercentage"}) {
+            try {
+                Method m = p.getClass().getMethod(n);
+                m.setAccessible(true);
+                Object v = m.invoke(p);
+                if (v instanceof Number) return ((Number) v).longValue();
+            } catch (Throwable ignored) {
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * **真播放器当前缓存了多少毫秒的视频**（`getVideoCachedDuration()`）；读不到返回 -1。
+     *
+     * 这是"往前缓冲了多少秒"唯一可信的读数（2026-10-13 加）：
+     * `IjkMediaPlayerTracker.getBufferTime()` / `getBufferPercentage()` 在本机恒为 0/-1，
+     * 而这个是 IJK 暴露"已缓存时长"的标准入口 —— 用户问的"缓冲到几秒开始补"
+     * 只能靠它观测。
+     */
+    public static long videoCachedMs() {
+        return callLongByName(new String[]{"getVideoCachedDuration", "_getVideoCachedDuration"});
+    }
+
+    /** 缓存了多少毫秒的音频；读不到返回 -1。 */
+    public static long audioCachedMs() {
+        return callLongByName(new String[]{"getAudioCachedDuration", "_getAudioCachedDuration"});
+    }
+
+    /** 已缓存的视频字节数；读不到返回 -1。 */
+    public static long videoCachedBytes() {
+        return callLongByName(new String[]{"getVideoCachedBytes", "_getVideoCachedBytes"});
+    }
+
+    private static long callLongByName(String[] names) {
+        Object p = playerRef();
+        if (p == null) return -1;
+        for (String n : names) {
             try {
                 Method m = p.getClass().getMethod(n);
                 m.setAccessible(true);

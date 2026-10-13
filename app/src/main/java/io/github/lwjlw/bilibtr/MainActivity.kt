@@ -263,8 +263,7 @@ fun SettingsScreen(activity: ComponentActivity) {
                     if (it == 0) "不干预" else "$it MB"
                 }
                 Text(
-                    "能囤多少数据（播放器 max-buffer-size）。设了它就以它为准；" +
-                        "不设则用下面的「缓冲时长」按当前码率换算。",
+                    "储存上限（MB）。实际缓冲上限取它与下面「缓冲时长 × 当前码率」中较大的一个。",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 IntSlider("缓冲时长", s.bufferTimeMs, 0, 60000, 0,
@@ -272,9 +271,9 @@ fun SettingsScreen(activity: ComponentActivity) {
                     if (it == 0) "不干预" else "${it / 1000} 秒"
                 }
                 Text(
-                    "希望保持多少秒的缓冲：按当前码率换算成缓冲上限（60 秒 4K ≈ 200MB）。" +
-                        "起播门槛 3 秒、卡顿后恢复门槛 15 秒是固定的（可在 btr.conf 用 " +
-                        "firstms / nextms / lastms 调）。",
+                    "希望保持多少秒的缓冲：按当前视频码率换算成数据量，和「缓冲大小」比大小取大的。" +
+                        "起播门槛 3 秒、读取低水位 3 秒、卡顿后恢复门槛 15 秒" +
+                        "（可在 btr.conf 用 firstms / nextms / lastms 调）。",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -510,7 +509,7 @@ private fun SpeedPanel(json: String) {
                 fontFamily = FontFamily.Monospace,
             )
             Text(
-                "缓冲 ${o.optLong("bufferMs") / 1000} 秒" +
+                "缓冲 ${o.optLong("videoCachedMs") / 1000} 秒（往前缓存）" +
                     "　倍速 设置 ${o.optDouble("playSpeed", 0.0)}x" +
                     " / B站 ${o.optDouble("appSpeed", 1.0)}x",
                 style = MaterialTheme.typography.bodySmall,

@@ -40,6 +40,9 @@ public final class StatsPusher {
                     ConnSpeed.observeAggregate(bps);
                     // ★ 卡顿哨兵：卡了就触发"重新测速 + 换最优节点"（Toast 可选）
                     StallWatcher.tick(bps);
+                    // ★ 缓冲上限：当前视频的码率可能和初始化时不同 → 变了就重新下发
+                    //   （"秒数 × 码率"和"储存大小"取较大者，见 BufferTuneProbe.reassertForCurrentStream）
+                    io.github.lwjlw.bilibtr.recon.probes.BufferTuneProbe.reassertForCurrentStream();
                     if (bytes > 0) {
                         String json = buildJson(bps);
                         // 界面走回环 TCP 拿数据（provider 那条路被软件包可见性挡住，
@@ -75,6 +78,7 @@ public final class StatsPusher {
         sb.append(",\"concSatMsLeft\":").append(ConnSpeed.satMsLeft());
         // ---- 播放器侧：缓冲与倍速（诊断用）----
         sb.append(",\"bufferMs\":").append(SpeedSession.lastBufferMs());
+        sb.append(",\"videoCachedMs\":").append(SpeedSession.lastVideoCachedMs());   // "往前缓冲了几秒"
         sb.append(",\"playSpeed\":").append(PlaySpeed.override());
         sb.append(",\"appSpeed\":").append(PlaySpeed.appSpeed());
         sb.append(",\"stallsPerMin\":").append(SpeedSession.lastStallsPerMin());

@@ -218,6 +218,10 @@ public final class SpeedSession {
                     // 真播放器口径的进度/缓冲（item/tracker 那两个在本机读不出来）
                     smp.playerPosition = io.github.lwjlw.bilibtr.proxy.PlaySpeed.currentPositionMs();
                     smp.bufferPercent = io.github.lwjlw.bilibtr.proxy.PlaySpeed.bufferPercent();
+                    // "往前缓冲了多少秒"—— 唯一能读到的来源
+                    smp.videoCachedMs = io.github.lwjlw.bilibtr.proxy.PlaySpeed.videoCachedMs();
+                    smp.videoCachedBytes = io.github.lwjlw.bilibtr.proxy.PlaySpeed.videoCachedBytes();
+                    if (smp.videoCachedMs >= 0) LAST_VIDEO_CACHED = smp.videoCachedMs;
                 } catch (Throwable ignored) {
                 }
 
@@ -373,6 +377,10 @@ public final class SpeedSession {
         player.put("speedLast", s.samples.isEmpty() ? -1f : s.samples.get(s.samples.size() - 1).speed);
         player.put("appSpeedLast", s.samples.isEmpty() ? -1f : s.samples.get(s.samples.size() - 1).appSpeed);
         player.put("bufferPercentLast", s.samples.isEmpty() ? -1 : s.samples.get(s.samples.size() - 1).bufferPercent);
+        // 缓冲水位的"体检"：最大/最小缓存时长 —— 用来回答"到底往前缓冲了几秒、掉到几秒又补"
+        player.put("videoCachedMaxMs", maxOf(s, true));
+        player.put("videoCachedMinMs", minOf(s, true));
+        player.put("videoCachedLastMs", s.samples.isEmpty() ? -1 : s.samples.get(s.samples.size() - 1).videoCachedMs);
         player.put("playRateActual", actualRate(s));
         o.put("player", player);
 
@@ -391,6 +399,8 @@ public final class SpeedSession {
             j.put("appSpeed", smp.appSpeed);    // B站 自己设的倍速
             j.put("playerPosition", smp.playerPosition);   // 真播放器的播放位置
             j.put("bufferPercent", smp.bufferPercent);     // 真播放器的缓冲百分比
+            j.put("videoCachedMs", smp.videoCachedMs);     // ★ 往前缓冲了多少毫秒
+            j.put("videoCachedBytes", smp.videoCachedBytes);
             arr.put(j);
         }
         o.put("curve", arr);
@@ -452,6 +462,26 @@ public final class SpeedSession {
         return (double) (p1 - p0) / (double) (t1 - t0);
     }
 
+    /** 缓存时长（videoCachedMs）的最大/最小值；没有有效采样返回 -1。 */
+    private static long maxOf(Session s, boolean cached) {
+        long m = -1;
+        for (Sample x : s.samples) {
+            long v = cached ? x.videoCachedMs : x.bufferTime;
+            if (v > m) m = v;
+        }
+        return m;
+    }
+
+    private static long minOf(Session s, boolean cached) {
+        long m = -1;
+        for (Sample x : s.samples) {
+            long v = cached ? x.videoCachedMs : x.bufferTime;
+            if (v < 0) continue;
+            if (m < 0 || v < m) m = v;
+        }
+        return m;
+    }
+
     private static long avgSpeeds(Session s) {        long sum = 0;
         int n = 0;
         for (Sample x : s.samples) {
@@ -502,6 +532,8 @@ public final class SpeedSession {
     private static volatile long LAST_TTFB = -1;
     /** 最近一次采样到的缓冲时长（毫秒）—— 诊断/面板用（2026-10-13 加）。 */
     private static volatile long LAST_BUFFER = -1;
+    /** 最近一次采样到的"已缓存视频时长"（毫秒）—— 面板上"缓冲 X 秒"用的就是它。 */
+    private static volatile long LAST_VIDEO_CACHED = -1;
 
     public static long lastStallsPerMin() {
         return LAST_STALLS;
@@ -514,6 +546,11 @@ public final class SpeedSession {
     /** 最近一次采样到的"播放器当前缓冲了多少毫秒"。 */
     public static long lastBufferMs() {
         return LAST_BUFFER;
+    }
+
+    /** 最近一次采样到的"已缓存视频时长"（毫秒）——"往前缓冲了几秒"。 */
+    public static long lastVideoCachedMs() {
+        return LAST_VIDEO_CACHED;
     }
 
     private static final class Sample {
@@ -545,6 +582,13 @@ public final class SpeedSession {
         long playerPosition = -1;
         /** 真播放器报的缓冲百分比（0~100，诊断用；-1 = 读不到）。 */
         long bufferPercent = -1;
+        /**
+         * 真播放器报的**已缓存视频时长**（毫秒，诊断用）。
+         * 这是"往前缓冲了多少秒"唯一能读到的来源（`getBufferTime`/`bufferPercentage` 本机读不出）。
+         */
+        long videoCachedMs = -1;
+        /** 已缓存的视频字节数（诊断用）。 */
+        long videoCachedBytes = -1;
     }
 
     private static final class Session {

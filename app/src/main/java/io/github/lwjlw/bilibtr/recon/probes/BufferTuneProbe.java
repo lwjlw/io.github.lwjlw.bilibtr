@@ -207,6 +207,48 @@ public final class BufferTuneProbe {
         return sb.toString();
     }
 
+    /** 上一次"按当前视频码率"下发过的缓冲上限（避免重复反射调用）。 */
+    private static volatile long lastAppliedMaxBytes = -1;
+
+    /**
+     * **按当前视频的码率重算缓冲上限并重新下发**（2026-10-13 加）。
+     *
+     * ## 为什么需要
+     * 别人的"秒数 → 字节"要乘**视频码率**，而 `setOption` 只在播放器初始化那一刻被我们拦到，
+     * 那时**当前视频的地址还不知道**（`CdnRacer.lastUrl()` 还是上一部，或者干脆是兜底的
+     * 1.5MB/s）→ 算出来的上限会偏小。所以由 {@link io.github.lwjlw.bilibtr.proxy.StatsPusher}
+     * 每 2 秒调一次这个方法：一旦当前视频的 `bw` 让上限**变了**，就重新下发一次。
+     *
+     * 只在值真的变化时才动手（正常播放全程最多 1~2 次），且任何异常都吞掉 ——
+     * 这段代码永远不该影响播放。
+     *
+     * 依赖方向说明：这里由 `proxy` 包反向调用 `recon.probes`，是为了**只保留一份**
+     * 反射设置选项的实现（`callSetOption`）；两个包没有编译期循环依赖。
+     */
+    public static void reassertForCurrentStream() {
+        try {
+            long want = ProxyConfig.bufferSizeBytes();
+            if (want <= 0) return;                    // 两个旋钮都没设 → 不干预
+            if (want == lastAppliedMaxBytes) return;  // 没变，不动
+            Object p = io.github.lwjlw.bilibtr.proxy.PlaySpeed.player();
+            if (p == null) return;                    // 还没抓到播放器实例
+            // ⚠️ 必须标记成"我们自己的调用"：否则 hook 会把这次 setOption 当成 B站 的行为，
+            //    既污染 APP_RAW（日志里"B站 原始 max-buffer-size"会变成我们自己的值），
+            //    又会多触发一次搭便车的 applyWaterMarks。
+            OURS.set(Boolean.TRUE);
+            try {
+                callSetOption(p, 4 /* IJK_OPT_CATEGORY_PLAYER */, "max-buffer-size", want);
+            } finally {
+                OURS.set(Boolean.FALSE);
+            }
+            lastAppliedMaxBytes = want;
+            Recon.note("OPT:RESIZE", "按当前视频码率重算缓冲上限 → " + want + "B（"
+                    + ProxyConfig.bufferSizeSource() + "）");
+        } catch (Throwable t) {
+            Recon.note("OPT:ERR", "重算缓冲上限失败：" + t);
+        }
+    }
+
     /** 在目标对象上调用"设置选项"——同时兼容 long 与 String 两种重载、以及不同的方法名。 */
     private static void callSetOption(Object target, int category, String name, long value)
             throws Exception {
