@@ -32,6 +32,8 @@ object SettingsStore {
             bufferSizeKb = p.getInt(BtrSettings.KEY_BUFFER_SIZE_KB, DEFAULT.bufferSizeKb),
             bufferTimeMs = p.getInt(BtrSettings.KEY_BUFFER_TIME_MS, DEFAULT.bufferTimeMs),
             ball = p.getBoolean(BtrSettings.KEY_BALL, DEFAULT.ball),
+            autoPick = p.getBoolean(BtrSettings.KEY_AUTO_PICK, DEFAULT.autoPick),
+            toast = p.getBoolean(BtrSettings.KEY_TOAST, DEFAULT.toast),
         )
     }
 
@@ -45,6 +47,8 @@ object SettingsStore {
             .putInt(BtrSettings.KEY_BUFFER_SIZE_KB, s.bufferSizeKb)
             .putInt(BtrSettings.KEY_BUFFER_TIME_MS, s.bufferTimeMs)
             .putBoolean(BtrSettings.KEY_BALL, s.ball)
+            .putBoolean(BtrSettings.KEY_AUTO_PICK, s.autoPick)
+            .putBoolean(BtrSettings.KEY_TOAST, s.toast)
             .apply()
     }
 
@@ -60,6 +64,8 @@ object SettingsStore {
             BtrSettings.KEY_BUFFER_SIZE_KB -> cur.copy(bufferSizeKb = value.toIntOrNull() ?: return false)
             BtrSettings.KEY_BUFFER_TIME_MS -> cur.copy(bufferTimeMs = value.toIntOrNull() ?: return false)
             BtrSettings.KEY_BALL -> cur.copy(ball = value.toBooleanStrictOrNull() ?: return false)
+            BtrSettings.KEY_AUTO_PICK -> cur.copy(autoPick = value.toBooleanStrictOrNull() ?: return false)
+            BtrSettings.KEY_TOAST -> cur.copy(toast = value.toBooleanStrictOrNull() ?: return false)
             else -> return false
         }
         save(ctx, next)

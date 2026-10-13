@@ -73,6 +73,8 @@ object ConfigClient {
                 appendLine("bufsizekb=${s.bufferSizeKb}")
                 appendLine("buftimems=${s.bufferTimeMs}")
                 appendLine("ball=${s.ball}")
+                appendLine("autopick=${s.autoPick}")
+                appendLine("toast=${s.toast}")
             }
             val ok = post("/config", body)
             // 打日志：能直接看出"界面到底推没推、推了什么"

@@ -38,6 +38,8 @@ public final class StatsPusher {
                     lastAt = now;
                     // ★ 闭环输入：把实际吞吐喂给并发控制器
                     ConnSpeed.observeAggregate(bps);
+                    // ★ 卡顿哨兵：卡了就触发"重新测速 + 换最优节点"（Toast 可选）
+                    StallWatcher.tick(bps);
                     if (bytes > 0) {
                         String json = buildJson(bps);
                         // 界面走回环 TCP 拿数据（provider 那条路被软件包可见性挡住，

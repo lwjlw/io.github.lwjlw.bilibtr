@@ -122,7 +122,9 @@ public class ReconModule extends XposedModule {
             }
             Sink.write("probes installed in " + param.getPackageName()
                     + " (host=" + AppHolder.hostVersion() + ")"
-                    + " rewriteEnabled=" + ProxyConfig.enabled());
+                    + " rewriteEnabled=" + ProxyConfig.enabled()
+                    + " autoPick=" + ProxyConfig.autoPick()
+                    + " toast=" + ProxyConfig.toastEnabled());
         } catch (Throwable t) {
             log("probe install failed", t);
             Sink.write("PROBE-INSTALL-FAIL " + t);

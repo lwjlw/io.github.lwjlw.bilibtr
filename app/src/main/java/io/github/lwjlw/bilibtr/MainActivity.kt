@@ -208,6 +208,43 @@ fun SettingsScreen(activity: ComponentActivity) {
                 }
             }
 
+            // ---------------- 自动测速选节点 ----------------
+            Card {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("自动测速选节点", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "播放时模块自己对本视频的全部候选节点测速（每个 256KB，十几个节点约 3MB 流量），" +
+                            "选出最快的那条。不需要打开本 App。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("启用自动测速选节点", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (s.autoPick) "进视频后测一次；真卡顿了会再测一次并换节点"
+                                else "已关闭：只用已经发生的传输速度来决定节点",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Switch(checked = s.autoPick, onCheckedChange = { update(s.copy(autoPick = it)) })
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("换节点时提示", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (s.toast) "因卡顿自动换节点时，会在播放画面上弹一条提示"
+                                else "已关闭（默认）：换节点不会有任何打扰",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Switch(checked = s.toast, onCheckedChange = { update(s.copy(toast = it)) })
+                    }
+                }
+            }
+
             // ---------------- 测速面板 ----------------
             SpeedPanel(statsJson)
 

@@ -64,6 +64,11 @@ public final class RangeFetcher {
     private static final int READ_TIMEOUT_MS = 20000;
     private static final int DEFAULT_RETRIES = 2;
     private static final int BUF = 64 * 1024;
+    /**
+     * 最近一次单片抓取失败的原因（HTTP 状态 / 内容区间不符 / 超时……）。
+     * 只为**诊断日志**存在：探测全失败时，没有它就只能看到一句"part failed"，查不出为什么。
+     */
+    private static final ThreadLocal<String> LAST_PART_ERR = new ThreadLocal<>();
     /** 一片超过这么久还没回来 → 认定是"慢块"，立刻补发一条（hedge）。 */
     private static final long HEDGE_AFTER_MS = 1500L;
     /** 连续失败计数 / 降级截止时刻（参考实现 DESIGN §3.11：降级 + 自动重接管）。 */
@@ -417,6 +422,7 @@ public final class RangeFetcher {
     private static Part fetchPartOnce(String url, Map<String, String> headers, long start, long end) {
         UpstreamPool.Conn c = null;
         long t0 = System.currentTimeMillis();
+        LAST_PART_ERR.remove();
         try {
             URL u = new URL(url);
             int port = u.getPort() > 0 ? u.getPort() : ("https".equalsIgnoreCase(u.getProtocol()) ? 443 : 80);
@@ -479,6 +485,7 @@ public final class RangeFetcher {
             ConnSpeed.record(off, System.currentTimeMillis() - t0);
             return p;
         } catch (Throwable t) {
+            LAST_PART_ERR.set(String.valueOf(t));      // 诊断用：把真实原因留给调用方
             UpstreamPool.discard(c);        // 任何异常 → 丢弃，绝不归池
             return null;
         }
@@ -549,7 +556,8 @@ public final class RangeFetcher {
             byte[] all = new byte[(int) len];
             for (Part p : parts) {
                 if (p == null) {
-                    r.error = "part failed";
+                    String why = LAST_PART_ERR.get();
+                    r.error = "part failed: " + (why == null ? "?" : why);
                     return r;
                 }
                 r.totalLength = p.total;

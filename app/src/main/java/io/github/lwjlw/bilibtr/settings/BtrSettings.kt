@@ -36,6 +36,16 @@ data class BtrSettings(
      * B站 原生没有 3x/4x，悬浮球补上；选"跟随"时完全不干预。
      */
     val ball: Boolean = true,
+    /**
+     * **自动测速选节点**：播放时模块自己对这条视频的候选 URL 测速（256KB/节点），
+     * 据此选最快的那条；卡顿了会再测一次并换节点。**不需要打开本 App。**
+     */
+    val autoPick: Boolean = true,
+    /**
+     * 因卡顿**自动换节点**时是否弹 Toast 告知用户。默认 **关**
+     * （只在"真的卡了、并且真的换了节点"时才可能弹）。
+     */
+    val toast: Boolean = false,
 ) {
     companion object {
         const val KEY_ENABLED = "enabled"
@@ -46,6 +56,8 @@ data class BtrSettings(
         const val KEY_BUFFER_SIZE_KB = "bufsizekb"
         const val KEY_BUFFER_TIME_MS = "buftimems"
         const val KEY_BALL = "ball"
+        const val KEY_AUTO_PICK = "autopick"
+        const val KEY_TOAST = "toast"
     }
 }
 
@@ -58,6 +70,8 @@ fun BtrSettings.toBundle(): Bundle = Bundle().apply {
     putInt(BtrSettings.KEY_BUFFER_SIZE_KB, bufferSizeKb)
     putInt(BtrSettings.KEY_BUFFER_TIME_MS, bufferTimeMs)
     putBoolean(BtrSettings.KEY_BALL, ball)
+    putBoolean(BtrSettings.KEY_AUTO_PICK, autoPick)
+    putBoolean(BtrSettings.KEY_TOAST, toast)
 }
 
 fun bundleToSettings(b: Bundle, fallback: BtrSettings): BtrSettings = BtrSettings(
@@ -69,4 +83,6 @@ fun bundleToSettings(b: Bundle, fallback: BtrSettings): BtrSettings = BtrSetting
     bufferSizeKb = b.getInt(BtrSettings.KEY_BUFFER_SIZE_KB, fallback.bufferSizeKb),
     bufferTimeMs = b.getInt(BtrSettings.KEY_BUFFER_TIME_MS, fallback.bufferTimeMs),
     ball = b.getBoolean(BtrSettings.KEY_BALL, fallback.ball),
+    autoPick = b.getBoolean(BtrSettings.KEY_AUTO_PICK, fallback.autoPick),
+    toast = b.getBoolean(BtrSettings.KEY_TOAST, fallback.toast),
 )

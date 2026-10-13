@@ -32,6 +32,7 @@ already has the right to access**.
 | Feature | Description |
 | --- | --- |
 | **Multi-CDN node selection** | Speed-tests the candidate nodes and uses the fastest one measured |
+| **Automatic per-video speed test** | On every new video the module speed-tests that video's candidate nodes itself (256 KB each) and **actually switches to the fastest**; if playback stalls it re-tests and switches again (optional toast, off by default) |
 | **Concurrent connections** | Splits one range request into parallel segments; **concurrency adapts to the bitrate** (drops to 1 for low bitrates) |
 | **Stream-as-you-fetch** | Returns data to the player as soon as upstream headers arrive, noticeably improving startup |
 | **Read-ahead cache** | Prefetches ahead in the background so later requests hit memory directly |
@@ -74,12 +75,18 @@ already has the right to access**.
 
 ### Node management
 
-- **Automatic** (on by default): the module continuously scores every node using **real
-  download throughput** and switches to the fastest one automatically;
+- **Automatic** (on by default): after a video starts, the module **speed-tests all candidate
+  nodes for that video itself** (256 KB each) and switches straight to the fastest one; if it
+  detects stalls during playback it re-tests and switches again. It also keeps scoring every
+  node using **real download throughput** to correct itself;
+- **Switch notification** (off by default): when enabled, a short toast tells you which node
+  the module switched to after a stall;
 - **Manual**: tap "对全部节点测速" (test all nodes), wait for it to finish, then **tap any
   node** to pin it. Tap "取消锁定" or enable "自动选最快" to restore automatic mode;
 - In the UI, "实际走" is the address the module actually uses, while "B站给的" is the
   address the client handed to the player.
+- The automatic test runs only during playback (5 s after entering a video, to stay clear of
+  startup) and uses roughly 3 MB per round; turn off "启用自动测速选节点" to disable it.
 
 ### Buffer settings
 

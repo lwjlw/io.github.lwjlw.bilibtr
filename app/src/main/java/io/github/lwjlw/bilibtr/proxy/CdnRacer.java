@@ -11,26 +11,32 @@ import java.util.concurrent.ConcurrentHashMap;
 import io.github.lwjlw.bilibtr.recon.Recon;
 
 /**
- * 阶段 P0：**CDN 候选竞速 + 优选（含"锚点优先"）**。
+ * 阶段 P0：**CDN 候选竞速 + 优选（含"锚点优先"）+ 自动测速选节点**。
  *
  * ## 一、候选与评分的两条铁律
  * - **候选地区无关**（{@link CdnCandidates}）：上游地址 ∪ 备用地址 ∪ 同家族换 host（大陆 8 + 海外 4），
  *   谁实测快用谁，不做地理偏好。签名不匹配的候选会在实测里被淘汰，所以多放候选是安全的。
- * - **评分必须来自真实流量**：64KB 探测只测到握手+慢启动，排序会反
+ * - **评分优先看真实流量**：64KB 探测只测到握手+慢启动，排序会反
  *   （实测：探测 cosov 288 > akamai 210，持续传输却是 akamai 快 11 倍）。
- *   所以真实传输反哺 {@code EMA_REAL}，探测只作**冷启动**依据。
+ *   所以真实传输反哺 {@code EMA_REAL}；**256KB** 的自动测速（{@link AutoPicker}）写
+ *   {@code PROBE_BPS}，并按下述顺序参与选路。
  *
- * ## 二、锚点优先（参考实现 DESIGN §3.9 原话）
- * > 锚点优先级：**视频自身给的 host > 竞速最优 > 其它候选**（竞速只补位纠偏）
+ * ## 二、选路优先级（见 {@link #resolve}，从上到下）
+ * 0. **界面手动锁定**（`pin`）；
+ * 1. **自动测速已选定的节点**（{@link #autoHost}，TTL {@link #AUTO_TTL_MS}）——
+ *    这是 2026-10-13 新增的：以前测速结果**只显示不生效**，"点了测速却不换节点"就是由此而来；
+ * 2. **自动测速的结论**：探测最优比当前节点快 ≥{@value #PROBE_SWITCH_MARGIN}× → 换
+ *    （用户定的门槛，"卡起来真的很卡"；当前节点探测失败/没测过时视为该换）；
+ * 3. **锚点够用就不动**：视频自己给的节点，真实实测吞吐 ≥ `bw÷8×1.2` → 保持锚点；
+ * 4. **锚点有实测但不够用**：另一节点**真实实测** ≥{@value #SWITCH_MARGIN}× 才换；
+ * 5. **锚点毫无实测数据**（刚起播）→ 才用 64KB 冷启动竞速的结果。
  *
- * 规则（见 {@link #resolve}）：
- * 1. **锚点够用就不动**：视频自己给的节点，其实测吞吐 ≥ `bw÷8×1.2` → 保持锚点；
- * 2. **锚点有实测但不够用**：只有当**另一节点也有真实实测**且 ≥1.5× 时才换；
- *    —— **绝不凭 64KB 探测就换**（踩过：冷门 4K 上被探测带去更慢的 akamai，卡顿反而变多）；
- * 3. **锚点毫无实测数据**（刚起播）→ 才用探测结果做冷启动。
+ * 防抖：**迟滞 1.2× + 最小驻留 15s + 每分钟最多切 4 次**（用户 2026-10-13 放宽，
+ * 原为 20s / 2 次），另有**竞速全局节流 120s**（反复探测自身就占带宽）。
  *
- * 防抖三件套（参考实现 DESIGN §3.6）：**迟滞 1.2× + 最小驻留 20s + 每分钟最多切 2 次**；
- * 另有**竞速全局节流 120s**（反复探测自身就占带宽）。
+ * ⚠️ 一个容易写错的地方：驻留/频率是**"做新决定"的闸门**，不能拿来否决
+ * **已经做出的决定** —— 否则切换后的下一个请求（毫秒级之后）就会因为"刚切过"
+ * 而退回锚点，变成每 15 秒一次的来回横跳。所以决定要记在 {@link #autoHost} 里。
  */
 public final class CdnRacer {
 
@@ -49,13 +55,33 @@ public final class CdnRacer {
     /** 换节点门槛：另一节点必须**真实实测**快这么多倍。 */
     private static final double SWITCH_MARGIN = 1.5;
     /**
+     * **自动测速**（{@link AutoPicker}）换节点的门槛：探测快 1.2× 就换。
+     *
+     * 比真实流量的 {@link #SWITCH_MARGIN} 松，是用户明确定的取舍
+     * （原话："≥1.2x 就换，因为卡起来真的很卡"）。
+     * 用 256KB 探测（不是早期会排反序的 64KB）+ 仍然保留驻留/频率限制来兜底；
+     * 换完之后的真实流量评分照样会继续纠偏。
+     */
+    private static final double PROBE_SWITCH_MARGIN = 1.2;
+    /**
+     * 自动测速选定的节点在这么久内一直有效。
+     *
+     * 为什么需要"记住一个决定"：`switchAllowed()` 的驻留/频率是**闸门**，
+     * 只能用来限制"做新决定"，不能用来限制"用已有的决定"——
+     * 否则切换后的下一个请求（毫秒级之后）就会因为"刚切过、不许再切"而退回锚点。
+     */
+    private static final long AUTO_TTL_MS = 60_000L;
+    /**
      * 最小驻留：切换后至少这么久不再评估切换。
      * 参考实现的血泪结论（DESIGN §3.6）：判据互斥 + 迟滞 + 驻留，
      * 否则会 1~2 秒互切一次，**每次切换都掐断流**。
+     *
+     * 2026-10-13 用户要求放宽到 15 秒（"卡起来真的很卡"）：
+     * 配合下面的 `MAX_SWITCH_PER_MIN = 4`，即"最快 15 秒换一次、每分钟最多 4 次"。
      */
-    private static final long MIN_DWELL_MS = 20_000L;
-    /** 每分钟最多切几次（参考实现同为 2 次）。 */
-    private static final int MAX_SWITCH_PER_MIN = 2;
+    private static final long MIN_DWELL_MS = 15_000L;
+    /** 每分钟最多切几次（用户要求"最大 15 秒换一次" ⇒ ≤4 次/分）。 */
+    private static final int MAX_SWITCH_PER_MIN = 4;
     /**
      * 竞速全局节流：节点快慢是"网络→节点"的属性，不同清晰度共享同一批节点，
      * 没必要每路都重探（实测：反复探测自身就占带宽、把播放拖慢）。
@@ -64,12 +90,27 @@ public final class CdnRacer {
 
     /** 真实流量实测吞吐（B/s）—— **唯一可信的评分来源**。 */
     private static final Map<String, Double> EMA_REAL = new ConcurrentHashMap<>();
-    /** 冷启动探测吞吐（B/s）—— 只在"锚点毫无真实数据"时用。 */
+    /**
+     * 探测吞吐（B/s）：早期只有 64KB 的冷启动竞速会写它，
+     * 现在**自动测速（256KB，{@link AutoPicker}）也写这里**，并且会真正参与选路
+     * （见 {@link #tryProbeSwitch}）—— 这就是"播放时测速然后选 CDN"的落点。
+     */
     private static final Map<String, Double> PROBE_BPS = new ConcurrentHashMap<>();
     private static final Map<String, Pick> PROBE = new ConcurrentHashMap<>();
     private static final Set<String> RACING = ConcurrentHashMap.newKeySet();
 
     private static volatile String activeHost;
+
+    /**
+     * **自动测速选定的节点**（{@link AutoPicker} 写，{@link #resolve} 优先执行，TTL 见 {@link #AUTO_TTL_MS}）。
+     *
+     * 与 {@link #activeHost} 的分工：`activeHost` 只是"现在在用的是谁"（给界面显示用，
+     * 选路时**只写不读**），而这个才是**决定**。
+     * 没有它的话，界面/自动测速算出来的"最快节点"永远不会真的被使用 ——
+     * 这正是改造前"点了测速却不换节点"的根因。
+     */
+    private static volatile String autoHost;
+    private static volatile long autoHostAt = 0L;
 
     // ---------------------------------------------------------------- 界面交互状态
     /** 界面手动锁定的 host（null = 自动）。 */
@@ -124,6 +165,9 @@ public final class CdnRacer {
         // 这样后续请求马上走新节点，不需要重新进视频。
         Prefetcher.clearAll();
         UpstreamPool.clearAll();
+        // 锁定/解锁都要丢掉"自动测速选定的节点"，让自动逻辑重新评估
+        //（否则取消锁定后还会继续用上一次自动挑的节点，看起来像没解锁）
+        autoHost = null;
         if (pinHost == null) {
             activeHost = null;   // 让自动逻辑重新评估
         } else {
@@ -141,6 +185,7 @@ public final class CdnRacer {
         if (auto) {
             pinHost = null;
             activeHost = null;
+            autoHost = null;
         }
     }
 
@@ -439,6 +484,9 @@ public final class CdnRacer {
                     lastCands = merged;
                 }
                 writeCandsFile(lastCands);
+                // ★ 用户点名要的能力：**进视频后自动对这条视频的全部候选测速，然后选最快的那条**
+                //   （不需要打开 btr 软件）。延时 + 限窗都在 AutoPicker 里，避免抢起播的带宽。
+                AutoPicker.onNewVideo(cid, lastCands, headers);
             }
             if (cands.size() < 2) return current;
             String key = keyOf(cands);
@@ -469,6 +517,27 @@ public final class CdnRacer {
                 return current;
             }
 
+            // ⓪.5 **自动测速已选定的节点** → 在 TTL 内直接执行这个决定
+            //     （驻留/频率是"做新决定"的闸门，不能拿来否决已经做出的决定）
+            String auto = autoHost;
+            if (auto != null) {
+                if (System.currentTimeMillis() - autoHostAt < AUTO_TTL_MS) {
+                    String au = urlWithHost(cands, auto);
+                    if (au != null) {
+                        noteUsed(au, current);
+                        return au;
+                    }
+                }
+                autoHost = null;   // 不在候选里 / 已过期 → 回到常规评估
+            }
+
+            // ⓪.6 **自动测速的结论**：探测明确更快（≥1.2×）→ 换过去（用户要求：测速选最快）
+            String probePick = tryProbeSwitch(anchor);
+            if (probePick != null) {
+                noteUsed(probePick, current);
+                return probePick;
+            }
+
             double target = targetBps(current);
             Double anchorEma = EMA_REAL.get(anchor);
 
@@ -490,6 +559,10 @@ public final class CdnRacer {
                     if (switchAllowed()) {
                         markSwitch();
                         activeHost = best.host;
+                        // ★ 必须记住这个决定：否则下一个请求（毫秒级之后）会因为
+                        //   "刚切过、驻留期内不许再切" 而退回锚点 —— 变成 15 秒一次的来回横跳。
+                        autoHost = best.host;
+                        autoHostAt = System.currentTimeMillis();
                         noteUsed(urlWithHost(cands, best.host), current);
                         Recon.note("CDN:SWITCH", "锚点 " + shortHost(anchor) + "=" + kb(anchorEma)
                                 + " 不够（目标 " + kb(target) + "）→ 换 " + shortHost(best.host)
@@ -568,6 +641,12 @@ public final class CdnRacer {
     private static void resetHostStats() {
         int n = HOST_BYTES.size();
         HOST_BYTES.clear();
+        // ★ 探测分也要清：它是**带着上一部视频的签名**测出来的。
+        //   不清的话，新视频起播的一瞬间就会拿"上一部的最快节点"直接换过去，
+        //   而那个节点对新视频的地址不一定收（换 host 出来的候选可能 403）。
+        //   正确顺序是：先用视频自己给的锚点起播 → 5 秒后自动测速 → 再决定换不换。
+        //   （真实流量评分 EMA_REAL **不清**：它是"这个节点本身快不快"，跨视频才有意义。）
+        PROBE_BPS.clear();
         if (n > 0) {
             Recon.note("CDN:STATS", "换视频 → 已清空上一片的节点用量统计（" + n + " 个节点）");
         }
@@ -637,6 +716,140 @@ public final class CdnRacer {
     private static final class HostBps {
         String host;
         double bps;
+    }
+
+    // ------------------------------------------------------------------ 自动测速 → 选路
+
+    /**
+     * 接收一轮自动测速的结果（由 {@link AutoPicker} 调用）。
+     *
+     * @param bpsByHost host → 实测吞吐（B/s）；**0 表示探测失败**（也要记，界面要显示"不可用"）
+     *
+     * 同时写两份：`PROBE_BPS`（选路用）和 `SPEEDTEST`（界面列表用）——
+     * 这样用户打开界面时，看到的就是"模块自己测出来的"结果，不用再手点一次。
+     */
+    public static void applyProbeScores(Map<String, Double> bpsByHost) {
+        if (bpsByHost == null) return;
+        for (Map.Entry<String, Double> e : bpsByHost.entrySet()) {
+            String h = e.getKey();
+            double v = e.getValue() == null ? 0 : e.getValue();
+            if (v > 0) {
+                PROBE_BPS.put(h, v);
+                SPEEDTEST.put(h, "1:" + (long) v);
+            } else {
+                // 探测失败：**不清掉旧分**（可能只是这一轮抖了），但界面要显示为不可用
+                SPEEDTEST.put(h, "0:0");
+            }
+        }
+        speedTestAt = System.currentTimeMillis();
+    }
+
+    /**
+     * 候选里探测最快的那条（用 {@link #PROBE_BPS}）。
+     * 只返回"有有效探测分"的节点；全都没分则返回 null。
+     */
+    private static HostBps bestProbe(List<String> cands) {
+        HostBps best = null;
+        for (String u : cands) {
+            String h = Recon.hostOf(u);
+            if (h == null) continue;
+            Double v = PROBE_BPS.get(h);
+            if (v == null || v <= 0) continue;
+            if (best == null || v > best.bps) {
+                best = new HostBps();
+                best.host = h;
+                best.bps = v;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 用**自动测速**的分数决定要不要换节点（用户要求：探测快 ≥1.2× 就换）。
+     *
+     * 判据（全部满足才换）：
+     * 1. 有候选、没被手动锁定、没关自动；
+     * 2. 探测最优 ≠ 当前节点；
+     * 3. 探测最优 ≥ 当前节点探测分 × {@link #PROBE_SWITCH_MARGIN}
+     *    （当前节点没测出分 / 探测失败时，视为"该换"——一个测不通的节点没有理由留着）；
+     * 4. 过 {@link #switchAllowed}（15 秒驻留 + 每分钟 ≤4 次）。
+     *
+     * @return 换过去的完整地址；null = 不需要换 / 不允许换
+     */
+    private static String tryProbeSwitch(String anchor) {
+        try {
+            List<String> cands = lastCands;
+            if (cands.size() < 2) return null;
+            if (pinHost != null || !autoMode) return null;
+            HostBps best = bestProbe(cands);
+            if (best == null) return null;
+            String curHost = activeHost != null ? activeHost : anchor;
+            if (curHost != null && curHost.equals(best.host)) {
+                // 探测确认"现在这条路就是最快的" → 给这个决定续期。
+                // 不续期的话，TTL 一到就会掉回"锚点优先"分支、又切回锚点，变成 60 秒一次的横跳。
+                // （当前用的就是锚点时不续期：那会把"真实流量换节点"的判断也一起冻住。）
+                if (!best.host.equals(anchor)) {
+                    autoHost = best.host;
+                    autoHostAt = System.currentTimeMillis();
+                }
+                return null;
+            }
+
+            Double curBps = curHost == null ? null : PROBE_BPS.get(curHost);
+            boolean curBad = curBps == null || curBps <= 0;
+            if (!curBad && best.bps < curBps * PROBE_SWITCH_MARGIN) {
+                if (Recon.first("CDN:AUTO-KEEP", curHost + "|" + best.host)) {
+                    Recon.note("CDN:AUTO-KEEP", "自动测速最优 " + shortHost(best.host) + "="
+                            + kb(best.bps) + " 未达当前 " + shortHost(curHost) + "=" + kb(curBps)
+                            + " 的 " + PROBE_SWITCH_MARGIN + "× → 不换");
+                }
+                return null;
+            }
+            if (!switchAllowed()) {
+                if (Recon.first("CDN:AUTO-HOLD", best.host)) {
+                    Recon.note("CDN:AUTO-HOLD", "本可切到 " + shortHost(best.host)
+                            + "，但受 15 秒驻留/每分钟 4 次限制，暂缓");
+                }
+                return null;
+            }
+            String u = urlWithHost(cands, best.host);
+            if (u == null) return null;
+
+            markSwitch();
+            autoHost = best.host;
+            autoHostAt = System.currentTimeMillis();
+            activeHost = best.host;
+            // 立刻生效：丢弃旧节点的空闲连接。
+            // ⚠️ **不清预读缓存**：缓存键是文件路径，换节点拿到的还是同一个文件的字节，
+            //    清掉只会白白浪费已经预读好的数据（`pin()` 清是因为那是用户手动操作，
+            //    语义上要求"完全重新开始"）。
+            UpstreamPool.clearAll();
+            Recon.note("CDN:AUTO-SWITCH", "自动测速选了 " + shortHost(best.host) + "=" + kb(best.bps)
+                    + (curBad ? "（当前 " + shortHost(curHost) + " 探测失败/未测）"
+                              : " ≥ 当前 " + shortHost(curHost) + "=" + kb(curBps)
+                                + " ×" + PROBE_SWITCH_MARGIN)
+                    + " → 已切换");
+            return u;
+        } catch (Throwable t) {
+            Recon.note("CDN:AUTO-ERR", String.valueOf(t));
+            return null;
+        }
+    }
+
+    /**
+     * {@link AutoPicker} 测完一轮后**立刻**执行一次选路（不用等播放器下一个请求）。
+     *
+     * @return 换过去的地址；null = 没换
+     */
+    public static String selectByProbe(String reason) {
+        String base = lastUrl;
+        String anchor = base == null ? null : Recon.hostOf(base);
+        boolean switched = tryProbeSwitch(anchor) != null;
+        if (!switched && Recon.first("AUTO:NO-SWITCH", reason)) {
+            Recon.note("AUTO:NO-SWITCH", "本轮自动测速（" + reason
+                    + "）没有换节点：当前 " + shortHost(activeHost) + " 已是最优或未达门槛");
+        }
+        return switched ? urlWithHost(lastCands, autoHost) : null;
     }
 
     /** 候选里"除 anchor 外卖真实实测最好的"。**只认真实流量，不认探测。** */

@@ -48,6 +48,20 @@ public final class ProxyConfig {
     /** 播放页悬浮球（3x/4x 倍速）总开关。 */
     private static volatile boolean ballEnabled = true;
     /**
+     * **进视频/卡顿时自动对候选节点测速，并据此选最快节点**（{@link AutoPicker}）。
+     *
+     * 默认 **true**（用户点名要的能力）。做成开关是为了 A/B 对照：
+     * 想验证"自动选节点到底有没有用"，把它关掉即可，不必整个关掉加速。
+     */
+    private static volatile boolean autoPick = true;
+    /**
+     * 因卡顿自动换节点时，是否弹 Toast 告知用户（{@link ToastNotifier}）。
+     *
+     * 默认 **false**（用户明确要求默认关）：提示只在"真的卡了并且真的换了节点"时出现，
+     * 用户想看到它时在界面里打开。
+     */
+    private static volatile boolean toast = false;
+    /**
      * 阶段 A 侦察探针开关（`OkHttpProbe`/`BodyProbe`/`JavaUrlProbe`/`PlayerProbe`）。
      *
      * **默认 false**：它们挂在 OkHttp / URL / 播放器的高频路径上
@@ -131,6 +145,18 @@ public final class ProxyConfig {
         return ballEnabled;
     }
 
+    /** 是否启用"自动测速选节点"。 */
+    public static boolean autoPick() {
+        reloadIfStale();
+        return autoPick;
+    }
+
+    /** 是否允许弹 Toast 提示（换节点时）。 */
+    public static boolean toastEnabled() {
+        reloadIfStale();
+        return toast;
+    }
+
     /** 小于这个长度的 Range 不切分（字节）。 */
     public static long minSplit() {
         reloadIfStale();
@@ -164,6 +190,8 @@ public final class ProxyConfig {
             int btm = 0;
             boolean ball = true;
             boolean recon = false;
+            boolean autoPickV = true;
+            boolean toastV = false;
             BufferedReader r = f.isFile()
                     ? new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"))
                     : null;
@@ -210,6 +238,10 @@ public final class ProxyConfig {
                         recon = "true".equalsIgnoreCase(v) || "1".equals(v);
                     } else if ("ball".equals(k)) {
                         ball = "true".equalsIgnoreCase(v) || "1".equals(v);
+                    } else if ("autopick".equals(k)) {
+                        autoPickV = "true".equalsIgnoreCase(v) || "1".equals(v);
+                    } else if ("toast".equals(k)) {
+                        toastV = "true".equalsIgnoreCase(v) || "1".equals(v);
                     } else if ("buftimems".equals(k)) {
                         try {
                             btm = Integer.parseInt(v);
@@ -231,6 +263,8 @@ public final class ProxyConfig {
             bufferTimeMs = btm;
             ballEnabled = ball;
             reconProbes = recon;
+            autoPick = autoPickV;
+            toast = toastV;
 
             // ② **界面设置优先**：用户改界面比改文件更常用，所以 provider 覆盖文件值。
             //    拿不到 provider（模块 App 没装/没启动）就保持文件值，绝不因此坏掉播放。
@@ -266,6 +300,8 @@ public final class ProxyConfig {
         if ((v = ConfigServer.live("bufsizekb")) != null) bufferSizeKb = parseInt(v, bufferSizeKb);
         if ((v = ConfigServer.live("buftimems")) != null) bufferTimeMs = parseInt(v, bufferTimeMs);
         if ((v = ConfigServer.live("ball")) != null) ballEnabled = "true".equalsIgnoreCase(v) || "1".equals(v);
+        if ((v = ConfigServer.live("autopick")) != null) autoPick = "true".equalsIgnoreCase(v) || "1".equals(v);
+        if ((v = ConfigServer.live("toast")) != null) toast = "true".equalsIgnoreCase(v) || "1".equals(v);
         if ((v = ConfigServer.live("recon")) != null) reconProbes = "true".equalsIgnoreCase(v) || "1".equals(v);
         if ((v = ConfigServer.live("speed")) != null) {
             try {

@@ -124,6 +124,12 @@ public final class ConfigServer {
                 sb.append("bufsizekb=").append(LIVE.getOrDefault("bufsizekb", "0")).append('\n');
                 sb.append("buftimems=").append(LIVE.getOrDefault("buftimems", "0")).append('\n');
                 sb.append("ball=").append(LIVE.getOrDefault("ball", "true")).append('\n');
+                // 自动测速选节点 / 换节点提示：**不在 LIVE 里就沿用当前值**
+                // （同 recon 的道理：手工在 btr.conf 里改过的不能被下一次界面推送抹掉）
+                sb.append("autopick=").append(LIVE.getOrDefault("autopick",
+                        ProxyConfig.autoPick() ? "true" : "false")).append('\n');
+                sb.append("toast=").append(LIVE.getOrDefault("toast",
+                        ProxyConfig.toastEnabled() ? "true" : "false")).append('\n');
                 // 侦察探针开关：**不在 LIVE 里就沿用当前值**。
                 // 不能写成 getOrDefault("recon","false")：那样手工设的 recon=1
                 // 会被下一次界面推送悄悄抹掉（这个文件是整体覆写的）。
@@ -339,6 +345,11 @@ public final class ConfigServer {
                 resp = "ok\n";
             } else if (path.startsWith("/auto")) {
                 CdnRacer.setAuto(!"0".equals(queryParam(query, "on")));
+                resp = "ok\n";
+            } else if (path.startsWith("/toast")) {
+                // 调试用：`/toast?m=测试` —— 用来确认"提示开关打开后到底能不能弹出来"。
+                // 受 `toast=` 开关约束（关着的时候什么都不做，日志里会看到 TOAST:SHOW 不出现）。
+                ToastNotifier.show(queryParam(query, "m"));
                 resp = "ok\n";
             } else {
                 resp = "ok\n";
