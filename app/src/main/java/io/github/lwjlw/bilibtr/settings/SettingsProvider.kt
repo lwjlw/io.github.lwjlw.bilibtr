@@ -23,8 +23,12 @@ import android.os.Bundle
  * | --- | --- | --- |
  * | `getSettings` | — | 全部设置（Bundle，键见 [BtrSettings]） |
  * | `setSetting` | `key` / `value` 两个 String extra | `ok`(Boolean) |
- * | `putStats` | `json` String extra | `ok`(Boolean) |
+ * | `putStats` | `json` String extra | `ok`(Boolean) |（**仅调试用**：注入侧不再走这条路，见下） |
  * | `getStats` | — | `json` |
+ *
+ * ⚠️ **实测：B站 进程（不同 uid）看不到这个 provider**（Android 11+ 软件包可见性）。
+ * 所以它**不是**界面↔注入侧的常规通道 —— 那条走回环 TCP（`ConfigServer`，18889）。
+ * 这里保留 `putStats`/`getStats` 只是为了 `adb shell content call` 直接调试。
  *
  * ## 调试用命令（adb shell）
  * ```text

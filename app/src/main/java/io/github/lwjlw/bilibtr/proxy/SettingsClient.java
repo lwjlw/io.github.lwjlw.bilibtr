@@ -8,14 +8,18 @@ import io.github.lwjlw.bilibtr.recon.AppHolder;
 import io.github.lwjlw.bilibtr.recon.Recon;
 
 /**
- * **注入侧**（跑在 B站 进程里）读取界面设置的通道，以及把测速数据推回去的出口。
+ * **注入侧**（跑在 B站 进程里）读取界面设置的通道。
  *
  * 为什么走 ContentProvider：界面（模块 App 的 uid）和 B站 进程 uid 不同，
  * 谁也不许碰对方的私有目录（Android 分区存储），
- * 所以用 `io.github.lwjlw.bilibtr.settings` 这个 provider 做唯一通道。
+ * 所以用 `io.github.lwjlw.bilibtr.settings` 这个 provider 做通道。
  *
- * - 读设置：{@link #get()}，2 秒缓存（改完最多 2 秒生效，又不会每请求都跨进程）；
- * - 推测速：{@link #putStats(String)}，由 {@link StatsPusher} 每 2 秒调一次。
+ * - 读设置：{@link #get()}，2 秒缓存（改完最多 2 秒生效，又不会每请求都跨进程）。
+ *
+ * ⚠️ **这条路实测被 Android 11+ 的软件包可见性挡住**（B站 进程看不到我们的
+ * provider → `Unknown authority ...`），所以它只是**兜底**；
+ * 界面↔注入侧真正在用的通道是回环 TCP（见 {@link ConfigServer}），
+ * 界面的设置值优先级也高于 provider。
  *
  * **拿不到 provider 时全部返回 null**，调用方一律回退到老的 `btr.conf`，
  * 所以模块 App 没装 / 没启动也不会把播放搞坏。
@@ -91,19 +95,6 @@ public final class SettingsClient {
             return s == null ? def : s;
         } catch (Throwable t) {
             return def;
-        }
-    }
-
-    /** 把测速数据（JSON 字符串）推给界面。失败静默。 */
-    public static void putStats(String json) {
-        if (json == null) return;
-        try {
-            Context ctx = AppHolder.get();
-            if (ctx == null) return;
-            Bundle b = new Bundle();
-            b.putString("json", json);
-            ctx.getContentResolver().call(URI, "putStats", null, b);
-        } catch (Throwable ignored) {
         }
     }
 }

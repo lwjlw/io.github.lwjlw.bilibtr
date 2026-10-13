@@ -72,7 +72,6 @@ object ConfigClient {
                 appendLine("port=${s.port}")
                 appendLine("bufsizekb=${s.bufferSizeKb}")
                 appendLine("buftimems=${s.bufferTimeMs}")
-                appendLine("qn=${s.forceQuality}")
                 appendLine("ball=${s.ball}")
             }
             val ok = post("/config", body)

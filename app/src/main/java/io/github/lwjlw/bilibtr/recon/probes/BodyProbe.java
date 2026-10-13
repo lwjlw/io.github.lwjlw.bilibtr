@@ -66,16 +66,12 @@ public final class BodyProbe {
     private static void scanBytes(byte[] b, String via) {
         if (b == null || b.length == 0) return;
         int n = Math.min(b.length, MAX_SCAN);
-        // 标题必须按 UTF-8 解（中文否则是乱码）；URL 扫描仍走 ISO-8859-1 那条
-        io.github.lwjlw.bilibtr.proxy.StreamMeta.scanBytes(b, n);
         // URL 是纯 ASCII，用 ISO-8859-1 逐字节映射最安全（不会因为非法 UTF-8 丢字符）
         scanText(new String(b, 0, n, StandardCharsets.ISO_8859_1), via, b.length);
     }
 
     private static void scanText(String text, String via, int fullLen) {
         if (text == null || text.length() < 16) return;
-        // 注意：标题**不在这里**扫 —— 这条路径的 text 是 ISO-8859-1 解出来的，
-        // 中文会变乱码。标题走 scanBytes()（UTF-8），见 scanBytes()。
 
         if (text.indexOf("http") < 0) return;   // 廉价预筛，绝大多数响应体到此为止
 

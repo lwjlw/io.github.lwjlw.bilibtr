@@ -38,8 +38,6 @@ public final class RangeFetcher {
 
     /** 小于这个长度不值得切（切了反而多花握手钱）。 */
     public static final long MIN_SPLIT = 64 * 1024L;
-    /** 超过这个长度不做"先全部收完再回"，直接走透传（保护内存）。 */
-    public static final long MAX_INMEM = 4 * 1024 * 1024L;
 
     private static final int CONNECT_TIMEOUT_MS = 8000;
     /**
@@ -68,8 +66,6 @@ public final class RangeFetcher {
     private static final int BUF = 64 * 1024;
     /** 一片超过这么久还没回来 → 认定是"慢块"，立刻补发一条（hedge）。 */
     private static final long HEDGE_AFTER_MS = 1500L;
-    private static final java.util.concurrent.atomic.AtomicLong HEDGE_COUNT =
-            new java.util.concurrent.atomic.AtomicLong();
     /** 连续失败计数 / 降级截止时刻（参考实现 DESIGN §3.11：降级 + 自动重接管）。 */
     /** 最近一次上游"首字节时间"（毫秒）：从发出请求到读到响应头。测速面板用。 */
     private static volatile long LAST_UPSTREAM_TTFB = -1;
@@ -350,7 +346,6 @@ public final class RangeFetcher {
      * —— 这正是"看着不卡但时不时顿一下"的来源。
      */
     private static void hedge(Slot slot, String url, Map<String, String> headers) {
-        HEDGE_COUNT.incrementAndGet();
         Thread t = new Thread(() -> {
             try {
                 Part p = fetchPartBytes(url, headers, slot.start, slot.end);

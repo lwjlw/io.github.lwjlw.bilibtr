@@ -155,11 +155,6 @@ public final class ConnSpeed {
         return Math.min(cap, lastDesired);
     }
 
-    /** 日志用（保留旧签名，调用处不用改）。 */
-    public static void noteIfChanged(int before, int after, double targetBps) {
-        // 变化已由 CONC:UP / CONC:DOWN / CONC:SAT 记录，这里不重复
-    }
-
     public static String describe(double targetBps, int maxConc) {
         return String.format(Locale.US, "并发 %d（目标 %s，实测吞吐 %s，每连接 %s，上限 %d）",
                 lastDesired, kb(targetBps), kb(aggBps), kb(perConnBps), maxConc);

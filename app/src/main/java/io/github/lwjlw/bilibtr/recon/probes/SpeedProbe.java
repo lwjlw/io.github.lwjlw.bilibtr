@@ -40,18 +40,6 @@ public final class SpeedProbe {
         if (item != null) {
             for (Method m : Reflect.declaredNamed(item, "setDataSourceToNative")) {
                 Hooks.install(x, m, "speed-item-setds", chain -> {
-            try {
-                Object it = chain.getThisObject();
-                if (it != null) {
-                    java.lang.reflect.Field f = it.getClass().getDeclaredField("mBuvid");
-                    f.setAccessible(true);
-                    Object v = f.get(it);
-                    if (v instanceof String) {
-                        io.github.lwjlw.bilibtr.proxy.StreamMeta.captureBuvid((String) v);
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
                     try {
                         Object self = chain.getThisObject();
                         SpeedSession.begin("(unknown)", self, trackerOf(self));

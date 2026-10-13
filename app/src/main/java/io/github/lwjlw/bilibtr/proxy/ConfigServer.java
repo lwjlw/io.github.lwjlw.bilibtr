@@ -123,7 +123,6 @@ public final class ConfigServer {
                 sb.append("port=").append(LIVE.getOrDefault("port", "18888")).append('\n');
                 sb.append("bufsizekb=").append(LIVE.getOrDefault("bufsizekb", "0")).append('\n');
                 sb.append("buftimems=").append(LIVE.getOrDefault("buftimems", "0")).append('\n');
-                sb.append("qn=").append(LIVE.getOrDefault("qn", "0")).append('\n');
                 sb.append("ball=").append(LIVE.getOrDefault("ball", "true")).append('\n');
                 // 侦察探针开关：**不在 LIVE 里就沿用当前值**。
                 // 不能写成 getOrDefault("recon","false")：那样手工设的 recon=1

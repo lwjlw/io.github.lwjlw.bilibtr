@@ -110,8 +110,9 @@ public class ReconModule extends XposedModule {
             BufferTuneProbe.install(this, cl);
             // 播放页悬浮球：3x / 4x 倍速
             SpeedBallProbe.install(this, cl);
-            // 注：TitleProbe（抓视频标题）**已不再安装** —— 标题功能放弃了（B站 反爬拦住），
-            // 而它 hook 的 Activity.setTitle/setTaskDescription 是每个 Activity 都会走的路径。
+            // 注：早期还有一个 TitleProbe（抓视频标题）—— **代码已删除**。
+            // B站 反爬把 4 条路全挡住了（详见 dev-docs/HANDOVER.md 的「标题」一节），
+            // 界面现在只显示 cid + 源/实际 host。
             // 阶段 D：把设置/测速打通（设置由界面 provider 提供，测速数据推回界面）
             try {
                 io.github.lwjlw.bilibtr.proxy.SettingsClient.get();   // 预热，避免首次播放时阻塞

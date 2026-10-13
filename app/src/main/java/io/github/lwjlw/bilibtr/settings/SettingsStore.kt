@@ -31,7 +31,6 @@ object SettingsStore {
             port = p.getInt(BtrSettings.KEY_PORT, DEFAULT.port),
             bufferSizeKb = p.getInt(BtrSettings.KEY_BUFFER_SIZE_KB, DEFAULT.bufferSizeKb),
             bufferTimeMs = p.getInt(BtrSettings.KEY_BUFFER_TIME_MS, DEFAULT.bufferTimeMs),
-            forceQuality = p.getInt(BtrSettings.KEY_FORCE_QUALITY, DEFAULT.forceQuality),
             ball = p.getBoolean(BtrSettings.KEY_BALL, DEFAULT.ball),
         )
     }
@@ -45,7 +44,6 @@ object SettingsStore {
             .putInt(BtrSettings.KEY_PORT, s.port)
             .putInt(BtrSettings.KEY_BUFFER_SIZE_KB, s.bufferSizeKb)
             .putInt(BtrSettings.KEY_BUFFER_TIME_MS, s.bufferTimeMs)
-            .putInt(BtrSettings.KEY_FORCE_QUALITY, s.forceQuality)
             .putBoolean(BtrSettings.KEY_BALL, s.ball)
             .apply()
     }
@@ -61,7 +59,6 @@ object SettingsStore {
             BtrSettings.KEY_PORT -> cur.copy(port = value.toIntOrNull() ?: return false)
             BtrSettings.KEY_BUFFER_SIZE_KB -> cur.copy(bufferSizeKb = value.toIntOrNull() ?: return false)
             BtrSettings.KEY_BUFFER_TIME_MS -> cur.copy(bufferTimeMs = value.toIntOrNull() ?: return false)
-            BtrSettings.KEY_FORCE_QUALITY -> cur.copy(forceQuality = value.toIntOrNull() ?: return false)
             BtrSettings.KEY_BALL -> cur.copy(ball = value.toBooleanStrictOrNull() ?: return false)
             else -> return false
         }

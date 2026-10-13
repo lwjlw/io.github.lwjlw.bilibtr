@@ -58,9 +58,6 @@ public final class LocalProxy {
 
     private static final AtomicLong REQ_COUNT = new AtomicLong();
     private static final AtomicLong BYTES_OUT = new AtomicLong();
-    /** 上一次实际使用的并发数（仅用于日志：让"并发 X → Y"里的 X 有意义）。 */
-    private static final java.util.concurrent.atomic.AtomicInteger LAST_CONC =
-            new java.util.concurrent.atomic.AtomicInteger(-1);
 
     private LocalProxy() {
     }
@@ -243,16 +240,10 @@ public final class LocalProxy {
                 long[] cr = RangeFetcher.parseClientRange(headers.get("range"));
                 if (cr != null) {
                     long len = cr[1] - cr[0] + 1;
-                    // ★ 并发数自适应（参考实现 DESIGN §3.4）：
-                    //   需要几条 = 码率÷8×1.2 ÷ 每条实测速度；上限取用户配置。
-                    //   低码率（720P）会自动降到 1 条：省掉多余的握手与慢启动。
+                    // ★ 并发数自适应：并发控制器盯**实际吞吐**做闭环（加/减/饱和判定），
+                    //   低码率会自动降到 1 条（省掉多余的握手与慢启动）。详见 ConnSpeed。
                     int concMax = ProxyConfig.concurrency();
                     int conc = ConnSpeed.desired(CdnRacer.targetBps(upUrl), concMax);
-                    // 只把**视频流**的并发记到面板上：音频流目标只有 ~15KB/s，
-                    // 它的"1 条"会把视频的真实并发覆盖掉（用户看到 4K 显示并发 1 就是这个原因）
-                    double tgt = CdnRacer.targetBps(upUrl);
-                    ConnSpeed.noteIfChanged(LAST_CONC.get(), conc, tgt);
-                    if (tgt >= 128 * 1024) LAST_CONC.set(conc);
                     if (conc > 1 && len >= ProxyConfig.minSplit() && !RangeFetcher.degraded()) {
                         long t0s = SystemClock.elapsedRealtime();
                         int rc = RangeFetcher.streamRange(upUrl, headers, cr[0], cr[1], conc, 0L, out);
@@ -513,20 +504,6 @@ public final class LocalProxy {
             else sb.append(k).append('=').append(Recon.clip(v, 120));
         }
         return Recon.clip(sb.toString(), 700);
-    }
-
-    /** 阶段 C2：把并发拼好的整段数据作为一次标准 206 回给播放器。 */
-    private static void writeParallel(OutputStream out, RangeFetcher.Result pr) throws Exception {
-        StringBuilder h = new StringBuilder(256);
-        h.append("HTTP/1.1 206 Partial Content\r\n");
-        if (pr.contentType != null) h.append("Content-Type: ").append(pr.contentType).append("\r\n");
-        h.append("Content-Length: ").append(pr.body.length).append("\r\n");
-        h.append("Content-Range: ").append(pr.contentRange).append("\r\n");
-        h.append("Accept-Ranges: bytes\r\n");
-        h.append("Connection: close\r\n\r\n");
-        out.write(h.toString().getBytes(StandardCharsets.ISO_8859_1));
-        out.write(pr.body);
-        out.flush();
     }
 
     /** 从预读缓存直接回 206（精确 Content-Range + Content-Length，DESIGN §3.3）。 */

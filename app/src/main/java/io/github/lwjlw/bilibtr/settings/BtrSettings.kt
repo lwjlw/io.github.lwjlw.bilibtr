@@ -31,8 +31,6 @@ data class BtrSettings(
      * 对应播放器的高/低水位（`first/next/last-high-water-mark-ms`）。
      */
     val bufferTimeMs: Int = 0,
-    /** 强制清晰度 qn（0 = 不干预；120 = 4K）。 */
-    val forceQuality: Int = 0,
     /**
      * **播放页悬浮球**（3x / 4x 倍速）总开关。
      * B站 原生没有 3x/4x，悬浮球补上；选"跟随"时完全不干预。
@@ -47,7 +45,6 @@ data class BtrSettings(
         const val KEY_PORT = "port"
         const val KEY_BUFFER_SIZE_KB = "bufsizekb"
         const val KEY_BUFFER_TIME_MS = "buftimems"
-        const val KEY_FORCE_QUALITY = "qn"
         const val KEY_BALL = "ball"
     }
 }
@@ -60,7 +57,6 @@ fun BtrSettings.toBundle(): Bundle = Bundle().apply {
     putInt(BtrSettings.KEY_PORT, port)
     putInt(BtrSettings.KEY_BUFFER_SIZE_KB, bufferSizeKb)
     putInt(BtrSettings.KEY_BUFFER_TIME_MS, bufferTimeMs)
-    putInt(BtrSettings.KEY_FORCE_QUALITY, forceQuality)
     putBoolean(BtrSettings.KEY_BALL, ball)
 }
 
@@ -72,6 +68,5 @@ fun bundleToSettings(b: Bundle, fallback: BtrSettings): BtrSettings = BtrSetting
     port = b.getInt(BtrSettings.KEY_PORT, fallback.port),
     bufferSizeKb = b.getInt(BtrSettings.KEY_BUFFER_SIZE_KB, fallback.bufferSizeKb),
     bufferTimeMs = b.getInt(BtrSettings.KEY_BUFFER_TIME_MS, fallback.bufferTimeMs),
-    forceQuality = b.getInt(BtrSettings.KEY_FORCE_QUALITY, fallback.forceQuality),
     ball = b.getBoolean(BtrSettings.KEY_BALL, fallback.ball),
 )

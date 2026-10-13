@@ -2,7 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 界面要按 cid 去 B站 公开接口查视频标题（测速面板显示"正在播放什么"） -->
+    <!-- 界面要用回环 TCP（127.0.0.1:18889）跟 B站 进程里的注入侧通信；
+         任何 socket（含 loopback）都需要 INTERNET 权限。 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application

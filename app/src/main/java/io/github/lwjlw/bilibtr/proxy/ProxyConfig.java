@@ -41,8 +41,6 @@ public final class ProxyConfig {
     private static volatile int minSplitKb = DEFAULT_MIN_SPLIT_KB;
     /** 测试用：强制播放倍速（0 = 不启用）。 */
     private static volatile float playbackSpeed = 0f;
-    /** 测试用：强制清晰度 qn（0 = 不启用；120=4K）。 */
-    private static volatile int qualityOverride = 0;
     /** 缓冲大小（KB）；0 = 不干预播放器默认。 */
     private static volatile int bufferSizeKb = 0;
     /** 缓冲时长（ms）；0 = 不干预播放器默认。 */
@@ -84,12 +82,6 @@ public final class ProxyConfig {
         if (c < 1) c = 1;
         if (c > 16) c = 16;
         return c;
-    }
-
-    /** 测试用强制清晰度 qn（120=4K）；<=0 表示不启用。 */
-    public static int qualityOverride() {
-        reloadIfStale();
-        return qualityOverride;
     }
 
     /** 测试用强制倍速；<=0 表示不启用。 */
@@ -168,7 +160,6 @@ public final class ProxyConfig {
             int cc = DEFAULT_CONCURRENCY;
             int ms = DEFAULT_MIN_SPLIT_KB;
             float sp = 0f;
-            int qn = 0;
             int bsk = 0;
             int btm = 0;
             boolean ball = true;
@@ -193,11 +184,6 @@ public final class ProxyConfig {
                     else if ("concurrency".equals(k)) {
                         try {
                             cc = Integer.parseInt(v);
-                        } catch (Throwable ignored) {
-                        }
-                    } else if ("qn".equals(k)) {
-                        try {
-                            qn = Integer.parseInt(v);
                         } catch (Throwable ignored) {
                         }
                     } else if ("speed".equals(k)) {
@@ -241,7 +227,6 @@ public final class ProxyConfig {
             concurrency = cc;
             minSplitKb = ms;
             playbackSpeed = sp;
-            qualityOverride = qn;
             bufferSizeKb = bsk;
             bufferTimeMs = btm;
             ballEnabled = ball;
@@ -259,7 +244,6 @@ public final class ProxyConfig {
                 port = SettingsClient.getInt(b, "port", port);
                 concurrency = SettingsClient.getInt(b, "concurrency", concurrency);
                 minSplitKb = SettingsClient.getInt(b, "minsplitkb", minSplitKb);
-                qualityOverride = SettingsClient.getInt(b, "qn", qualityOverride);
                 bufferSizeKb = SettingsClient.getInt(b, "bufsizekb", bufferSizeKb);
                 bufferTimeMs = SettingsClient.getInt(b, "buftimems", bufferTimeMs);
             }
@@ -279,7 +263,6 @@ public final class ProxyConfig {
         if ((v = ConfigServer.live("concurrency")) != null) concurrency = parseInt(v, concurrency);
         if ((v = ConfigServer.live("minsplitkb")) != null) minSplitKb = parseInt(v, minSplitKb);
         if ((v = ConfigServer.live("port")) != null) port = parseInt(v, port);
-        if ((v = ConfigServer.live("qn")) != null) qualityOverride = parseInt(v, qualityOverride);
         if ((v = ConfigServer.live("bufsizekb")) != null) bufferSizeKb = parseInt(v, bufferSizeKb);
         if ((v = ConfigServer.live("buftimems")) != null) bufferTimeMs = parseInt(v, bufferTimeMs);
         if ((v = ConfigServer.live("ball")) != null) ballEnabled = "true".equalsIgnoreCase(v) || "1".equals(v);

@@ -43,29 +43,6 @@ public final class OkHttpProbe {
             Method build = Reflect.exact(requestBuilder, "build");
             Hooks.install(x, build, "okhttp-build", resultHooker("HTTP-BUILD", true));
         }
-        // ★ B站 的 Cookie 是在 `Headers.Builder.add("Cookie", ...)` 里加进去的，
-        //   在 `Request$Builder.build()` 那一刻还看不到 —— 所以要多挂这一处。
-        Class<?> headersBuilder = Reflect.load(cl, "okhttp3.Headers$Builder");
-        if (headersBuilder != null) {
-            for (Method m : Reflect.declaredNamed(headersBuilder, "add", "addUnsafeNonAscii")) {
-                Hooks.install(x, m, "okhttp-hdr-" + m.getName(), chain -> {
-                    try {
-                        Object n = chain.getArgs().size() > 0 ? chain.getArg(0) : null;
-                        Object v = chain.getArgs().size() > 1 ? chain.getArg(1) : null;
-                        if (n instanceof String && v instanceof String
-                                && "cookie".equalsIgnoreCase((String) n)) {
-                            io.github.lwjlw.bilibtr.proxy.StreamMeta.captureAuth((String) v, null);
-                        }
-                        if (n instanceof String && v instanceof String
-                                && "user-agent".equalsIgnoreCase((String) n)) {
-                            io.github.lwjlw.bilibtr.proxy.StreamMeta.captureAuth(null, (String) v);
-                        }
-                    } catch (Throwable ignored) {
-                    }
-                    return chain.proceed();
-                });
-            }
-        }
         if (okHttpClient != null && request != null) {
             Method newCall = Reflect.exact(okHttpClient, "newCall", request);
             Hooks.install(x, newCall, "okhttp-newcall", requestArgHooker("HTTP-NEWCALL"));
@@ -100,11 +77,6 @@ public final class OkHttpProbe {
         if (request == null) return;
         String url = urlOf(request);
         if (url == null) return;
-        // 把 B站 自己的 Cookie/UA 抄给 StreamMeta —— 我们自己去查标题时要用
-        if (url.contains("bilibili.com")) {
-            io.github.lwjlw.bilibtr.proxy.StreamMeta.captureAuth(
-                    headerOf(request, "Cookie"), headerOf(request, "User-Agent"));
-        }
         String range = withRange ? headerOf(request, "Range") : null;
 
         if (Recon.isVideoByteUrl(url)) {

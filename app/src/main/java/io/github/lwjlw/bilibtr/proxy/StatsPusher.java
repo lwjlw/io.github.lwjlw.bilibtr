@@ -40,8 +40,9 @@ public final class StatsPusher {
                     ConnSpeed.observeAggregate(bps);
                     if (bytes > 0) {
                         String json = buildJson(bps);
-                        ConfigServer.setStats(json);      // ← 界面走这条（TCP）
-                        SettingsClient.putStats(json);    // ← 顺带写 provider，方便 adb 看
+                        // 界面走回环 TCP 拿数据（provider 那条路被软件包可见性挡住，
+                        // 不再每次白调一次 —— 见 ConfigServer / HANDOVER §7「阶段 D 关键决定」）
+                        ConfigServer.setStats(json);
                     }
                 } catch (InterruptedException ie) {
                     return;
