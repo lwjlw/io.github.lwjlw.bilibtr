@@ -238,17 +238,13 @@ public final class AutoPicker {
             return;
         }
         CdnRacer.applyProbeScores(scores);
-        String before = CdnRacer.activeHost();
         String chosen = CdnRacer.selectByProbe(reason);
         if (chosen != null) {
+            // ⚠️ Toast **不在这里发**：切换也可能发生在 resolve() 那条路径上（按探测分换），
+            //    只有 CdnRacer 内部知道每一次真正的切换 → 提示统一由 CdnRacer 负责，
+            //    否则就会出现"换了节点却没有任何提示"（用户实测踩到）。
             Recon.note("AUTO:SWITCH", "已切到 " + shortHost(Recon.hostOf(chosen))
-                    + "（原因：" + reason + "，原 " + shortHost(before) + "）");
-            // 只有"因为卡顿才换的节点"才提示用户（Toast 默认也是关的）
-            if ("stall".equals(reason)) {
-                ToastNotifier.show("BiliBTR：检测到卡顿，已测速并切换到最快节点 "
-                        + shortHost(Recon.hostOf(chosen))
-                        + (before != null ? "（原 " + shortHost(before) + "）" : ""));
-            }
+                    + "（原因：" + reason + "）");
         }
     }
 

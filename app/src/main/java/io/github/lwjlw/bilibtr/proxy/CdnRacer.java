@@ -532,7 +532,7 @@ public final class CdnRacer {
             }
 
             // ⓪.6 **自动测速的结论**：探测明确更快（≥1.2×）→ 换过去（用户要求：测速选最快）
-            String probePick = tryProbeSwitch(anchor);
+            String probePick = tryProbeSwitch(anchor, "自动测速");
             if (probePick != null) {
                 noteUsed(probePick, current);
                 return probePick;
@@ -567,6 +567,9 @@ public final class CdnRacer {
                         Recon.note("CDN:SWITCH", "锚点 " + shortHost(anchor) + "=" + kb(anchorEma)
                                 + " 不够（目标 " + kb(target) + "）→ 换 " + shortHost(best.host)
                                 + "=" + kb(best.bps) + "（真实实测 ≥" + SWITCH_MARGIN + "×）");
+                        // 自动换节点都提示用户（同样受 `toast=` 开关与 5 秒限流约束）
+                        ToastNotifier.show("BiliBTR：实测更快，已换到 " + shortHost(best.host)
+                                + "（原 " + shortHost(anchor) + "，" + kb(best.bps) + "）");
                         return urlWithHost(cands, best.host);
                     }
                     if (Recon.first("CDN:HOLD", best.host)) {
@@ -775,8 +778,9 @@ public final class CdnRacer {
      * 4. 过 {@link #switchAllowed}（15 秒驻留 + 每分钟 ≤4 次）。
      *
      * @return 换过去的完整地址；null = 不需要换 / 不允许换
+     * @param reason 这次决策的来源（"进视频" / "stall" / …），只用于日志与 Toast 文案
      */
-    private static String tryProbeSwitch(String anchor) {
+    private static String tryProbeSwitch(String anchor, String reason) {
         try {
             List<String> cands = lastCands;
             if (cands.size() < 2) return null;
@@ -829,6 +833,12 @@ public final class CdnRacer {
                               : " ≥ 当前 " + shortHost(curHost) + "=" + kb(curBps)
                                 + " ×" + PROBE_SWITCH_MARGIN)
                     + " → 已切换");
+            // ★ Toast 必须在这里发（2026-10-13 修）：这才是"真正做切换决策"的唯一地方。
+            //   之前只在 AutoPicker 的"卡顿触发"分支里发，于是 resolve() 里按探测分换节点时
+            //   **一次提示都没有**（用户实测反馈"切换节点的 toast 始终没显示"）。
+            ToastNotifier.show("BiliBTR：" + ("stall".equals(reason) ? "检测到卡顿，" : "")
+                    + "已测速换到 " + shortHost(best.host)
+                    + "（原 " + shortHost(curHost) + "，实测 " + kb(best.bps) + "）");
             return u;
         } catch (Throwable t) {
             Recon.note("CDN:AUTO-ERR", String.valueOf(t));
@@ -844,7 +854,7 @@ public final class CdnRacer {
     public static String selectByProbe(String reason) {
         String base = lastUrl;
         String anchor = base == null ? null : Recon.hostOf(base);
-        boolean switched = tryProbeSwitch(anchor) != null;
+        boolean switched = tryProbeSwitch(anchor, reason) != null;
         if (!switched && Recon.first("AUTO:NO-SWITCH", reason)) {
             Recon.note("AUTO:NO-SWITCH", "本轮自动测速（" + reason
                     + "）没有换节点：当前 " + shortHost(activeHost) + " 已是最优或未达门槛");
