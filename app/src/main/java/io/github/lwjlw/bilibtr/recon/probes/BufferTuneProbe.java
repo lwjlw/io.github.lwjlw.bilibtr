@@ -163,15 +163,18 @@ public final class BufferTuneProbe {
     private static void applyWaterMarks(Object target, List<Object> args) {
         // ⚠️ 这一瞬间播放器刚初始化，配置可能还是 2 秒缓存里的旧值 → 强制重读
         ProxyConfig.forceReload();
-        long ms = ProxyConfig.bufferTimeMs();
+        long first = ProxyConfig.firstWaterMs();
+        long next = ProxyConfig.nextWaterMs();
+        long last = ProxyConfig.lastWaterMs();
         long bufBytes = ProxyConfig.bufferSizeBytes();
         if (Recon.first("OPT:CHK", "v")) {
-            // 诊断汇总（2026-10-13）：一次把"我们的配置 / B站 自己设过的值"打全，
-            // 免得再从一堆 OPT:SEEN/OPT:OURS 里拼。
-            Recon.note("OPT:CHK", "缓冲配置：时长=" + ms + "ms（0=不干预）、大小=" + bufBytes
-                    + "B；B站 自己设过的缓冲选项=" + appRawSummary());
+            // 诊断汇总（2026-10-13）：一次把"我们要设什么 / B站 自己设过什么"打全。
+            // 上限的**来源**必须说清楚（曾经这里把"界面缓冲大小"说成"时长×码率"，会误导排查）。
+            Recon.note("OPT:CHK", "缓冲配置：起播门槛=" + first + "ms、卡顿恢复=" + next
+                    + "ms、读取低水位=" + last + "ms、上限=" + bufBytes + "B"
+                    + "（来源：" + ProxyConfig.bufferSizeSource() + "）"
+                    + "；B站 自己设过的缓冲选项=" + appRawSummary());
         }
-        if (ms <= 0) return;
         int category = args.size() >= 1 && args.get(0) instanceof Number
                 ? ((Number) args.get(0)).intValue() : 4;   // 4 = IJK_OPT_CATEGORY_PLAYER
         OURS.set(Boolean.TRUE);
@@ -179,11 +182,11 @@ public final class BufferTuneProbe {
             // 实测：`getThisObject()` 有时是 IjkMediaPlayer（方法叫 setOption），
             // 有时是 IjkMediaPlayerItemClient（方法叫 setOptionLong / setOptionString）
             // → **按名字逐个试**，别假设。
-            callSetOption(target, category, "first-high-water-mark-ms", ms);
-            callSetOption(target, category, "next-high-water-mark-ms", ms);
-            callSetOption(target, category, "last-high-water-mark-ms", ms / 2);
-            Recon.note("OPT:SET", "我们设置缓冲水位 first/next=" + ms + "ms last=" + (ms / 2) + "ms"
-                    + "（对象 " + target.getClass().getSimpleName()
+            callSetOption(target, category, "first-high-water-mark-ms", first);
+            callSetOption(target, category, "next-high-water-mark-ms", next);
+            callSetOption(target, category, "last-high-water-mark-ms", last);
+            Recon.note("OPT:SET", "我们设置缓冲：起播门槛=" + first + "ms 卡顿恢复=" + next
+                    + "ms 读取低水位=" + last + "ms（对象 " + target.getClass().getSimpleName()
                     + "@" + Integer.toHexString(System.identityHashCode(target)) + "）"
                     + "；B站 原始 max-buffer-size=" + APP_RAW.getOrDefault("max-buffer-size", "未见"));
         } catch (Throwable t) {
@@ -253,22 +256,33 @@ public final class BufferTuneProbe {
         return false;
     }
 
-    /** 返回要覆盖成的值（字符串形式）；null = 不覆盖。 */
+    /**
+     * 返回要覆盖成的值（字符串形式）；null = 不覆盖。
+     *
+     * ## 三个水位是三种**不同**的东西（2026-10-13 修正，之前混成一个数）
+     * | 选项 | 语义 | 我们的值 |
+     * | --- | --- | --- |
+     * | `first-high-water-mark-ms` | 攒够多少才**开始播** | 3s（起播快） |
+     * | `next-high-water-mark-ms` | 卡顿后攒够多少才**继续播** | 15s（一次卡顿别罚一分钟） |
+     * | `last-high-water-mark-ms` | 缓冲掉到多少就**继续读** | 3s（一消耗就补） |
+     * | `max-buffer-size` | **能囤多少**（容量） | 用户设的 MB，或"秒数 × 码率" |
+     *
+     * ⚠️ 以前把用户的"缓冲时长"（比如 60 秒）同时塞给 `first` 和 `next`：
+     * 结果是"必须先攒 60 秒才开播""卡一次要再等 60 秒"，
+     * 还会和"读线程的暂停条件"互相等成死锁（实测出现过连续 35 秒一个字节都不下载）。
+     */
     private static String override(String name, Object cur) {
         String low = name.toLowerCase();
         long bufSize = ProxyConfig.bufferSizeBytes();
-        long bufTime = ProxyConfig.bufferTimeMs();
-        if (low.contains("max-buffer-size") && bufSize > 0) return String.valueOf(bufSize);
-        if (low.contains("high-water-mark") && bufTime > 0) {
-            // `last-high-water-mark-ms` 是**最低**水位，按一半处理 ——
-            // 必须和 {@link #applyWaterMarks} 里的设置保持一致，
-            // 否则会出现"设置时写 30000、覆盖时又变回 60000"的自相矛盾。
-            return String.valueOf(low.contains("last-") ? bufTime / 2 : bufTime);
+        if (low.contains("max-buffer-size")) {
+            return bufSize > 0 ? String.valueOf(bufSize) : null;
         }
-        if (low.contains("min-frames") && bufTime > 0) {
-            // min-frames 是帧数不是毫秒：按 30fps 折算，给个保守值
-            return String.valueOf(Math.max(1, bufTime / 33));
-        }
+        if (low.contains("first-high-water-mark")) return String.valueOf(ProxyConfig.firstWaterMs());
+        if (low.contains("next-high-water-mark")) return String.valueOf(ProxyConfig.nextWaterMs());
+        if (low.contains("last-high-water-mark")) return String.valueOf(ProxyConfig.lastWaterMs());
+        // ⚠️ `min-frames` **不再覆盖**：它是"最少攒多少帧"，按 60 秒折算成 1818 帧时
+        //    等于又一个"卡住不播"的门槛。B站 自己没设过这个选项（实测），
+        //    我们也就别去动它。
         return null;
     }
 }

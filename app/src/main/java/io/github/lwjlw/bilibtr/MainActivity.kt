@@ -256,15 +256,15 @@ fun SettingsScreen(activity: ComponentActivity) {
                 // ⚠️ **单位必须换算**（曾经是个 bug）：
                 // 界面显示 **MB**，但底层字段 `bufferSizeKb` 与配置项 `bufsizekb` 都是 **KB**。
                 // 原来直接把滑块的 MB 数当 KB 存下去 → "200 MB" 实际只有 **200 KB**
-                // （B站 原本是 150 MB），缓冲被压到极小，
-                // 导致**缓冲水位（缓冲时长）永远撑不满**，看起来就是"缓冲时长没生效"。
+                // （B站 原本是 150 MB），缓冲被压到极小。
                 // 现在在这里做 MB ↔ KB 换算。
                 IntSlider("缓冲大小", s.bufferSizeKb / 1024, 0, 200, 0,
                     { v -> update(s.copy(bufferSizeKb = v * 1024)) }) {
                     if (it == 0) "不干预" else "$it MB"
                 }
                 Text(
-                    "实测 B站 默认已经是 150MB，通常不用动。",
+                    "能囤多少数据（播放器 max-buffer-size）。设了它就以它为准；" +
+                        "不设则用下面的「缓冲时长」按当前码率换算。",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 IntSlider("缓冲时长", s.bufferTimeMs, 0, 60000, 0,
@@ -272,7 +272,9 @@ fun SettingsScreen(activity: ComponentActivity) {
                     if (it == 0) "不干预" else "${it / 1000} 秒"
                 }
                 Text(
-                    "这个才是真正有用的旋钮（B站 默认不设水位）。参考值 30~60 秒。",
+                    "希望保持多少秒的缓冲：按当前码率换算成缓冲上限（60 秒 4K ≈ 200MB）。" +
+                        "起播门槛 3 秒、卡顿后恢复门槛 15 秒是固定的（可在 btr.conf 用 " +
+                        "firstms / nextms / lastms 调）。",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

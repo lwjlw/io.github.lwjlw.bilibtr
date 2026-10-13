@@ -123,6 +123,14 @@ public final class ConfigServer {
                 sb.append("port=").append(LIVE.getOrDefault("port", "18888")).append('\n');
                 sb.append("bufsizekb=").append(LIVE.getOrDefault("bufsizekb", "0")).append('\n');
                 sb.append("buftimems=").append(LIVE.getOrDefault("buftimems", "0")).append('\n');
+                // 三个缓冲水位（2026-10-13 加）：界面没有入口，**不在 LIVE 里就沿用当前值**，
+                // 免得手工在 btr.conf 里调过的值被下一次界面推送抹掉。
+                sb.append("firstms=").append(LIVE.getOrDefault("firstms",
+                        String.valueOf(ProxyConfig.firstWaterMs()))).append('\n');
+                sb.append("nextms=").append(LIVE.getOrDefault("nextms",
+                        String.valueOf(ProxyConfig.nextWaterMs()))).append('\n');
+                sb.append("lastms=").append(LIVE.getOrDefault("lastms",
+                        String.valueOf(ProxyConfig.lastWaterMs()))).append('\n');
                 sb.append("ball=").append(LIVE.getOrDefault("ball", "true")).append('\n');
                 // 自动测速选节点 / 换节点提示：**不在 LIVE 里就沿用当前值**
                 // （同 recon 的道理：手工在 btr.conf 里改过的不能被下一次界面推送抹掉）
