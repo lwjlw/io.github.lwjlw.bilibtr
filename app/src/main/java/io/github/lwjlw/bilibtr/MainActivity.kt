@@ -496,6 +496,24 @@ private fun SpeedPanel(json: String) {
                 "请求数 ${o.optInt("requests")}　累计 ${fmtBytes(o.optLong("bytes"))}",
                 style = MaterialTheme.typography.bodySmall,
             )
+            // 诊断行（2026-10-13 加）：并发闭环的判据 + 播放器缓冲与倍速。
+            // 专门用来回答"并发为什么涨不上去""缓冲到底有没有保持""倍速实际多少"。
+            Text(
+                "并发判据：目标 ${fmtBps(o.optLong("concTargetBps"))}" +
+                    "　窗口 ${fmtBps(o.optLong("concWindowBps"))}" +
+                    "　每连接 ${fmtBps(o.optLong("perConnBps"))}" +
+                    (if (o.optLong("concSatMsLeft", 0) > 0)
+                        "　饱和冷静 ${o.optLong("concSatMsLeft") / 1000}s" else ""),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                "缓冲 ${o.optLong("bufferMs") / 1000} 秒" +
+                    "　倍速 设置 ${o.optDouble("playSpeed", 0.0)}x" +
+                    " / B站 ${o.optDouble("appSpeed", 1.0)}x",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+            )
             val hosts = o.optJSONArray("hosts")
             if (hosts != null && hosts.length() > 0) {
                 Text("本片实际用量", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)

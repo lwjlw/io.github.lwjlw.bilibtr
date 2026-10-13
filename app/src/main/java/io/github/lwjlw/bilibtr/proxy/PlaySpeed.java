@@ -46,7 +46,58 @@ public final class PlaySpeed {
         java.lang.ref.WeakReference<Object> old = player;
         if (old != null && old.get() == p) return;
         player = new java.lang.ref.WeakReference<>(p);
-        Recon.note("SPEED:BALL", "已抓到播放器实例 " + p.getClass().getSimpleName());
+        // 带上实例身份（诊断用，2026-10-13）：B站 会创建很多播放器实例（疑似预加载池），
+        // 只有把 hashCode 打出来，才能判断"我们设倍速的那个"是不是"正在播的那个"。
+        Recon.note("SPEED:BALL", "已抓到播放器实例 " + p.getClass().getSimpleName()
+                + "@" + Integer.toHexString(System.identityHashCode(p)));
+    }
+
+    /** 当前是否处于"我们自己正在设置倍速"的重入中（诊断/日志用）。 */
+    public static boolean isApplying() {
+        return APPLYING.get();
+    }
+
+    // ============ 诊断用读数（2026-10-13 加，只读，不改变任何播放行为） ============
+    // 为什么不用 SpeedSession 里已有的那两个：实测本机上
+    //   `IjkMediaPlayerItem.getPlayPosition()` 恒为 -1/0、
+    //   `IjkMediaPlayerTracker.getBufferTime(0)` 恒为 0 —— 都测不出东西。
+    // 于是改成问**真播放器自己**要（我们本来就抓着它的实例）。
+
+    private static Object playerRef() {
+        java.lang.ref.WeakReference<Object> r = player;
+        return r == null ? null : r.get();
+    }
+
+    /** 真播放器的当前播放位置（毫秒）；读不到返回 -1。 */
+    public static long currentPositionMs() {
+        Object p = playerRef();
+        if (p == null) return -1;
+        for (String n : new String[]{"getCurrentPosition", "_getCurrentPosition"}) {
+            try {
+                Method m = p.getClass().getMethod(n);
+                m.setAccessible(true);
+                Object v = m.invoke(p);
+                if (v instanceof Number) return ((Number) v).longValue();
+            } catch (Throwable ignored) {
+            }
+        }
+        return -1;
+    }
+
+    /** 真播放器的缓冲百分比（0~100）；读不到返回 -1。 */
+    public static long bufferPercent() {
+        Object p = playerRef();
+        if (p == null) return -1;
+        for (String n : new String[]{"getBufferPercentage", "_getBufferPercentage"}) {
+            try {
+                Method m = p.getClass().getMethod(n);
+                m.setAccessible(true);
+                Object v = m.invoke(p);
+                if (v instanceof Number) return ((Number) v).longValue();
+            } catch (Throwable ignored) {
+            }
+        }
+        return -1;
     }
 
     /**
@@ -106,7 +157,9 @@ public final class PlaySpeed {
         APPLYING.set(Boolean.TRUE);
         try {
             if (invokeSetSpeed(p, v)) {
-                Recon.note("SPEED:BALL", "已对 " + p.getClass().getSimpleName() + " 设置 " + v + "x");
+                Recon.note("SPEED:BALL", "已对 " + p.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(p)) + " 设置 " + v + "x"
+                        + "（实测速率见 playback-*.json 的 playRateActual）");
             } else {
                 Recon.note("SPEED:BALL-ERR", "这个播放器上没有找到 setSpeed(float)");
             }

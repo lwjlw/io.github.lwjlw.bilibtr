@@ -67,6 +67,16 @@ public final class StatsPusher {
         sb.append(",\"bytes\":").append(LocalProxy.totalBytes());
         sb.append(",\"concurrency\":").append(ConnSpeed.lastDesired());
         sb.append(",\"perConnBps\":").append((long) ConnSpeed.perConnBps());
+        // ---- 并发闭环的"判据快照"（2026-10-13 加，专为诊断"并发涨得慢"）----
+        sb.append(",\"concTargetBps\":").append((long) ConnSpeed.targetBps());
+        sb.append(",\"concAggBps\":").append((long) ConnSpeed.aggregateBps());
+        sb.append(",\"concWindowBps\":").append((long) ConnSpeed.aggWindowBps());
+        sb.append(",\"concSamples\":").append(ConnSpeed.aggSamples());
+        sb.append(",\"concSatMsLeft\":").append(ConnSpeed.satMsLeft());
+        // ---- 播放器侧：缓冲与倍速（诊断用）----
+        sb.append(",\"bufferMs\":").append(SpeedSession.lastBufferMs());
+        sb.append(",\"playSpeed\":").append(PlaySpeed.override());
+        sb.append(",\"appSpeed\":").append(PlaySpeed.appSpeed());
         sb.append(",\"stallsPerMin\":").append(SpeedSession.lastStallsPerMin());
         sb.append(",\"ttfbP50Ms\":").append(SpeedSession.lastTtfbP50());
         String active = CdnRacer.activeHost();

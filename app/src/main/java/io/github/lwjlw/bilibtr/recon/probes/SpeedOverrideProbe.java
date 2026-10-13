@@ -40,6 +40,18 @@ public final class SpeedOverrideProbe {
                 // 先记下 B站 自己设的值 —— 悬浮球选"跟随"时要设回它
                 io.github.lwjlw.bilibtr.proxy.PlaySpeed.noteAppSpeed(fromApp);
                 float v = io.github.lwjlw.bilibtr.proxy.PlaySpeed.effective(fromApp);
+                // ★ 诊断（2026-10-13）：把"谁在改倍速"记下来。
+                //   ours=true → 我们自己主动设的（悬浮球 / applyNow 的调用）；
+                //   ours=false → B站 自己的调用。它可能在我们设完之后又改回去，
+                //   这正是"选了 4x 却跑不到"要排查的第一件事。同一值只记一次，避免刷屏。
+                try {
+                    boolean ours = io.github.lwjlw.bilibtr.proxy.PlaySpeed.isApplying();
+                    if (Recon.first("SPEED:SET", (ours ? "ours" : "app") + ":" + fromApp)) {
+                        Recon.note("SPEED:SET", (ours ? "我们" : "B站") + " 调 setSpeed(" + fromApp + ")"
+                                + (Math.abs(v - fromApp) > 0.001f ? " → 实际下发 " + v + "x" : "（不改动）"));
+                    }
+                } catch (Throwable ignored) {
+                }
                 if (Math.abs(v - fromApp) > 0.001f) {
                     return chain.proceed(new Object[]{v});
                 }

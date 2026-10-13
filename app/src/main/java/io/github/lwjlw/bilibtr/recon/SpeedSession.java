@@ -50,7 +50,7 @@ public final class SpeedSession {
     private static final long IDLE_END_MS = 30000L;
     private static final int MAX_SAMPLES = 3600;
     /** `playback-*.json` 只保留最近这么多个（超出删最旧）。 */
-    private static final int KEEP_JSON = 20;
+    private static final int KEEP_JSON = 60;
     /** 每多少个采样做一次"中途落盘"。 */
     private static final int PERSIST_EVERY = 5;
 
@@ -206,9 +206,19 @@ public final class SpeedSession {
                     // 卡顿口径：每分钟缓冲次数 + 掉帧率
                     smp.bufferPerMin = callLong(tracker, "getMinuteBufferCount");
                     LAST_STALLS = smp.bufferPerMin;
+                    LAST_BUFFER = smp.bufferTime;
                 }
                 if (item != null) {
                     smp.dropRate = callLong(item, "getDropFrameRate");
+                }
+                // 倍速快照（诊断用）：把"我们要求几倍"和实际进度放在同一条曲线上
+                try {
+                    smp.speed = io.github.lwjlw.bilibtr.proxy.PlaySpeed.override();
+                    smp.appSpeed = io.github.lwjlw.bilibtr.proxy.PlaySpeed.appSpeed();
+                    // 真播放器口径的进度/缓冲（item/tracker 那两个在本机读不出来）
+                    smp.playerPosition = io.github.lwjlw.bilibtr.proxy.PlaySpeed.currentPositionMs();
+                    smp.bufferPercent = io.github.lwjlw.bilibtr.proxy.PlaySpeed.bufferPercent();
+                } catch (Throwable ignored) {
                 }
 
                 int count;
@@ -357,6 +367,13 @@ public final class SpeedSession {
         player.put("bufferPerMinLast", s.samples.isEmpty() ? -1 : s.samples.get(s.samples.size() - 1).bufferPerMin);
         player.put("bufferPerMinMax", maxBufferPerMin(s));
         player.put("dropRateMax", maxDropRate(s));
+        // 倍速相关（诊断用）：speedLast = 我们要求的倍速（0=跟随 B站），
+        // playRateActual = 用 position 斜率算出来的**实际播放速率** ——
+        // 这两者才是"悬浮球 4x 到底跑了几倍"的答案。
+        player.put("speedLast", s.samples.isEmpty() ? -1f : s.samples.get(s.samples.size() - 1).speed);
+        player.put("appSpeedLast", s.samples.isEmpty() ? -1f : s.samples.get(s.samples.size() - 1).appSpeed);
+        player.put("bufferPercentLast", s.samples.isEmpty() ? -1 : s.samples.get(s.samples.size() - 1).bufferPercent);
+        player.put("playRateActual", actualRate(s));
         o.put("player", player);
 
         JSONArray arr = new JSONArray();
@@ -370,6 +387,10 @@ public final class SpeedSession {
             j.put("position", smp.playPosition);
             j.put("bufferPerMin", smp.bufferPerMin);
             j.put("dropRate", smp.dropRate);
+            j.put("speed", smp.speed);          // 我们要求的倍速（0=跟随 B站）
+            j.put("appSpeed", smp.appSpeed);    // B站 自己设的倍速
+            j.put("playerPosition", smp.playerPosition);   // 真播放器的播放位置
+            j.put("bufferPercent", smp.bufferPercent);     // 真播放器的缓冲百分比
             arr.put(j);
         }
         o.put("curve", arr);
@@ -401,8 +422,37 @@ public final class SpeedSession {
         return String.format(Locale.US, "%dKB/s", bps / 1024);
     }
 
-    private static long avgSpeeds(Session s) {
-        long sum = 0;
+    /**
+     * **实际播放速率** = Δ播放位置 ÷ Δ时间（2026-10-13 加，诊断用）。
+     *
+     * 只看有有效 position 的采样（`getPlayPosition` 取不到时是 -1），
+     * 并要求至少 2 个点、跨度 ≥ 5 秒，否则返回 -1。
+     * 悬浮球选了 4x 而这里算出 1.0，就说明倍速没真正作用到那条正在播的流上。
+     */
+    private static double actualRate(Session s) {
+        return rateOf(s, true) >= 0 ? rateOf(s, true) : rateOf(s, false);
+    }
+
+    /**
+     * @param usePlayer true = 用真播放器的 `playerPosition`，false = 用 item 的 `position`
+     */
+    private static double rateOf(Session s, boolean usePlayer) {
+        long p0 = -1, p1 = -1, t0 = 0, t1 = 0;
+        for (Sample x : s.samples) {
+            long v = usePlayer ? x.playerPosition : x.playPosition;
+            if (v <= 0) continue;
+            if (p0 < 0) {
+                p0 = v;
+                t0 = x.t;
+            }
+            p1 = v;
+            t1 = x.t;
+        }
+        if (p0 < 0 || p1 <= p0 || t1 - t0 < 5000) return -1;
+        return (double) (p1 - p0) / (double) (t1 - t0);
+    }
+
+    private static long avgSpeeds(Session s) {        long sum = 0;
         int n = 0;
         for (Sample x : s.samples) {
             if (x.tcpSpeed > 0) {
@@ -450,6 +500,8 @@ public final class SpeedSession {
     private static volatile long LAST_STALLS = -1;
     /** 最近一次代理请求的首字节时间中位数（测速面板用）。 */
     private static volatile long LAST_TTFB = -1;
+    /** 最近一次采样到的缓冲时长（毫秒）—— 诊断/面板用（2026-10-13 加）。 */
+    private static volatile long LAST_BUFFER = -1;
 
     public static long lastStallsPerMin() {
         return LAST_STALLS;
@@ -457,6 +509,11 @@ public final class SpeedSession {
 
     public static long lastTtfbP50() {
         return LAST_TTFB;
+    }
+
+    /** 最近一次采样到的"播放器当前缓冲了多少毫秒"。 */
+    public static long lastBufferMs() {
+        return LAST_BUFFER;
     }
 
     private static final class Sample {
@@ -470,6 +527,24 @@ public final class SpeedSession {
         long bufferTime = -1;
         long netError;
         long playPosition = -1;
+        /**
+         * 采样这一刻的**倍速设置**（诊断用，2026-10-13 加）。
+         *
+         * 为什么要记：只有把"我们要求几倍速"和"实际播放多快"（`position` 的斜率）
+         * 放在同一条曲线上，才能回答"悬浮球选了 4x，实际到底跑了多少"。
+         * `speed` = 0 表示"跟随 B站"，>0 = 我们强制覆盖的值。
+         */
+        float speed = 0f;
+        /** B站 自己设过的倍速（`PlaySpeed.appSpeed`），用来判断谁在改倍速。 */
+        float appSpeed = 1f;
+        /**
+         * **真播放器**报的播放位置（毫秒，诊断用）。
+         * 为什么要单列：`IjkMediaPlayerItem.getPlayPosition()` 在本机恒为 -1，
+         * 只有问 `IjkMediaPlayer.getCurrentPosition()` 才拿得到 → 实际倍速只能靠它算。
+         */
+        long playerPosition = -1;
+        /** 真播放器报的缓冲百分比（0~100，诊断用；-1 = 读不到）。 */
+        long bufferPercent = -1;
     }
 
     private static final class Session {

@@ -47,6 +47,16 @@ public final class BufferTuneProbe {
     /** 防止"我们自己在 hook 里再调 setOption"导致无限递归。 */
     private static final ThreadLocal<Boolean> OURS = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
+    /**
+     * **B站 自己**设过的缓冲选项原值（诊断用，2026-10-13 加）。
+     *
+     * 为什么要单独记：`Recon.first("OPT:SEEN", ...)` 只记第一次，而第一次常常是我们
+     * `applyWaterMarks` 写进去的 —— 于是日志里那几行"B站 设置 first/next=60000"
+     * 其实是**我们自己**的值。分开记之后才能回答"B站 到底设没设水位"。
+     */
+    private static final java.util.Map<String, String> APP_RAW =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private BufferTuneProbe() {
     }
 
@@ -93,12 +103,23 @@ public final class BufferTuneProbe {
                 if (a.size() >= 2 && a.get(1) instanceof String) {
                     String name = (String) a.get(1);
                     if (isBufferKey(name)) {
+                        // ★ 诊断修正（2026-10-13）：必须区分"这条是 B站 自己调的"还是"我们自己调的"。
+                        //   之前用 Recon.first("OPT:SEEN", name) 只记第一次，而第一次往往就是
+                        //   applyWaterMarks 自己写进去的那次 → 日志里显示的"B站 设置的值"其实是
+                        //   **我们的值**，会把人骗到（曾据此误判"B站 也在设水位"）。
+                        boolean ours = OURS.get();
+                        String raw = a.size() >= 3 ? String.valueOf(a.get(2)) : "?";
                         String newVal = override(name, a.size() >= 3 ? a.get(2) : null);
-                        // 记录 B站 实际用的选项（每个名字只记一次）
-                        if (Recon.first("OPT:SEEN", name)) {
-                            Recon.note("OPT:SEEN", "B站 设置缓冲选项 " + name + " = "
-                                    + (a.size() >= 3 ? String.valueOf(a.get(2)) : "?")
-                                    + (newVal != null ? "  → 覆盖为 " + newVal : "（未覆盖）"));
+                        if (ours) {
+                            if (Recon.first("OPT:OURS", name)) {
+                                Recon.note("OPT:OURS", "我们自己设置缓冲选项 " + name + " = " + raw);
+                            }
+                        } else {
+                            APP_RAW.put(name, raw);       // 记下 B站 的原始值，便于汇总比对
+                            if (Recon.first("OPT:SEEN", name)) {
+                                Recon.note("OPT:SEEN", "B站 自己设置缓冲选项 " + name + " = " + raw
+                                        + (newVal != null ? "  → 我们覆盖为 " + newVal : "（我们不覆盖）"));
+                            }
                         }
                         if (newVal != null) {
                             args = a.toArray();
@@ -143,8 +164,12 @@ public final class BufferTuneProbe {
         // ⚠️ 这一瞬间播放器刚初始化，配置可能还是 2 秒缓存里的旧值 → 强制重读
         ProxyConfig.forceReload();
         long ms = ProxyConfig.bufferTimeMs();
+        long bufBytes = ProxyConfig.bufferSizeBytes();
         if (Recon.first("OPT:CHK", "v")) {
-            Recon.note("OPT:CHK", "读取缓冲配置：时长=" + ms + "ms");
+            // 诊断汇总（2026-10-13）：一次把"我们的配置 / B站 自己设过的值"打全，
+            // 免得再从一堆 OPT:SEEN/OPT:OURS 里拼。
+            Recon.note("OPT:CHK", "缓冲配置：时长=" + ms + "ms（0=不干预）、大小=" + bufBytes
+                    + "B；B站 自己设过的缓冲选项=" + appRawSummary());
         }
         if (ms <= 0) return;
         int category = args.size() >= 1 && args.get(0) instanceof Number
@@ -157,13 +182,26 @@ public final class BufferTuneProbe {
             callSetOption(target, category, "first-high-water-mark-ms", ms);
             callSetOption(target, category, "next-high-water-mark-ms", ms);
             callSetOption(target, category, "last-high-water-mark-ms", ms / 2);
-            Recon.note("OPT:SET", "已设置缓冲水位 first/next=" + ms + "ms last=" + (ms / 2) + "ms"
-                    + "（对象 " + target.getClass().getSimpleName() + "）");
+            Recon.note("OPT:SET", "我们设置缓冲水位 first/next=" + ms + "ms last=" + (ms / 2) + "ms"
+                    + "（对象 " + target.getClass().getSimpleName()
+                    + "@" + Integer.toHexString(System.identityHashCode(target)) + "）"
+                    + "；B站 原始 max-buffer-size=" + APP_RAW.getOrDefault("max-buffer-size", "未见"));
         } catch (Throwable t) {
             Recon.note("OPT:ERR", "设置水位失败：" + t);
         } finally {
             OURS.set(Boolean.FALSE);
         }
+    }
+
+    /** B站 自己设过的缓冲选项汇总（没设过的就不出现）。 */
+    private static String appRawSummary() {
+        if (APP_RAW.isEmpty()) return "（无 —— 水位/缓冲上限都是默认值）";
+        StringBuilder sb = new StringBuilder();
+        for (java.util.Map.Entry<String, String> e : APP_RAW.entrySet()) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(e.getKey()).append('=').append(e.getValue());
+        }
+        return sb.toString();
     }
 
     /** 在目标对象上调用"设置选项"——同时兼容 long 与 String 两种重载、以及不同的方法名。 */
